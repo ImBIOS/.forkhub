@@ -28,7 +28,14 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-auth-stop-accumulating-authorized-client-sessi",
-      "last_realized_against_commit": "30d9c19"
+      "last_realized_against_commit": "30d9c19",
+      "applied_upstream_pr": {
+        "number": 7978,
+        "url": "https://github.com/pingdotgg/t3code/pull/7978",
+        "issue": "https://github.com/pingdotgg/t3code/issues/7977",
+        "issue_number": 7977,
+        "state": "open"
+      }
     }
   },
   "apply_order": [

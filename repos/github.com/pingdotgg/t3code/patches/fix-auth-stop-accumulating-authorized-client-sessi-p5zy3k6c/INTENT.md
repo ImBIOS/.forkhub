@@ -4,7 +4,7 @@ title: fix(auth): stop accumulating authorized-client sessions per relaunch
 target_repo: github.com/pingdotgg/t3code
 target_area: [apps/server/src/auth, apps/server/src/persistence, packages/contracts/src/auth.ts, packages/client-runtime/src/authorization, apps/web/src/connection/platform.ts, apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts, apps/mobile]
 status: applied
-applied_upstream_pr: none
+applied_upstream_pr: 7978
 version: 1
 license: MIT
 author: Imamuzzaki Abu Salam

@@ -1,0 +1,1 @@
+{"n":1,"phase":"drafting","timestamp":"2026-08-23T06:59:17.985Z","upstream_sha":"30d9c19","approach":"fix(auth): stop accumulating authorized-client sessions per relaunch","result":"passed","tokens":0,"model":"manual"}

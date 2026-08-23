@@ -21,10 +21,19 @@
         "issue": "https://github.com/pingdotgg/t3code/issues/7754",
         "issue_number": 7754
       }
+    },
+    "fix-auth-stop-accumulating-authorized-client-sessi-p5zy3k6c": {
+      "status": "applied",
+      "version": 1,
+      "author": "Imamuzzaki Abu Salam",
+      "last_modified_by": "Imamuzzaki Abu Salam",
+      "branch": "fix-auth-stop-accumulating-authorized-client-sessi",
+      "last_realized_against_commit": "30d9c19"
     }
   },
   "apply_order": [
-    "fix-t3code-strip-osc-ansi-escapes-from-opencode-cl-y7shx01y"
+    "fix-t3code-strip-osc-ansi-escapes-from-opencode-cl-y7shx01y",
+    "fix-auth-stop-accumulating-authorized-client-sessi-p5zy3k6c"
   ],
   "slug_aliases": {}
 }

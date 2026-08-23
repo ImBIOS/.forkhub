@@ -1,0 +1,1 @@
+{"n":1,"phase":"drafting","timestamp":"2026-08-21T04:40:40.961Z","upstream_sha":"45a2c4b","approach":"fix(t3code): strip OSC/ANSI escapes from OpenCode CLI inventory and stored agent selections (UnknownError / timeout)","result":"passed","tokens":0,"model":"manual"}

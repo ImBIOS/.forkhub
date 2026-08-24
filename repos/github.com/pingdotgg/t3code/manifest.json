@@ -57,8 +57,15 @@
       "version": 1,
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
-      "branch": "feat-t3code-server-side-scheduled-tasks-start-agen",
-      "last_realized_against_commit": "30d9c19"
+      "branch": "feat/scheduled-tasks-upstream",
+      "last_realized_against_commit": "30d9c19",
+      "applied_upstream_pr": {
+        "number": 7986,
+        "url": "https://github.com/pingdotgg/t3code/pull/7986",
+        "issue": "https://github.com/pingdotgg/t3code/issues/7966",
+        "issue_number": 7966,
+        "state": "open"
+      }
     }
   },
   "apply_order": [

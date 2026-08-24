@@ -1,0 +1,10 @@
+{
+  "upstream_url": "git@github.com:flexagoon/focused-window-dbus.git",
+  "upstream_main_branch": "main",
+  "upstream_remote": "upstream",
+  "fork_url": "git@github.com:ImBIOS/focused-window-dbus.git",
+  "fork_remote": "origin",
+  "last_known_upstream_sha": "5ff336f",
+  "last_synced_at": "2026-08-24T13:35:01.944Z",
+  "schedule": "on-upstream-release"
+}

@@ -1,0 +1,1 @@
+{"n":1,"phase":"drafting","timestamp":"2026-08-24T13:40:55.966Z","upstream_sha":"c880c7f","approach":"Fix Wayland GC sweep crash by deferring clipboard initialization and disconnecting destroy handlers before disposal","result":"passed","tokens":0,"model":"manual"}

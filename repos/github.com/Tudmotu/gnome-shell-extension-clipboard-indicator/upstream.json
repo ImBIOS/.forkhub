@@ -1,0 +1,10 @@
+{
+  "upstream_url": "git@github.com:Tudmotu/gnome-shell-extension-clipboard-indicator.git",
+  "upstream_main_branch": "master",
+  "upstream_remote": "upstream",
+  "fork_url": "git@github.com:ImBIOS/gnome-shell-extension-clipboard-indicator.git",
+  "fork_remote": "origin",
+  "last_known_upstream_sha": "c880c7f",
+  "last_synced_at": "2026-08-24T13:34:59.457Z",
+  "schedule": "on-upstream-release"
+}

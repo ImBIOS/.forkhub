@@ -1,0 +1,1 @@
+{"n":1,"phase":"drafting","timestamp":"2026-08-24T13:40:59.076Z","upstream_sha":"5ff336f","approach":"Defer D-Bus export to idle to avoid GC sweep block on Wayland hybrid nvidia","result":"passed","tokens":0,"model":"manual"}

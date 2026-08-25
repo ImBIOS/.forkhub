@@ -15,10 +15,19 @@
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-wayland-gc-sweep-crash-by-deferring-clipboard-",
       "last_realized_against_commit": "c880c7f"
+    },
+    "fix-opencode-only-set-tab-title-when-stdout-is-a-t-kmxnxn5t": {
+      "status": "applied",
+      "version": 1,
+      "author": "Imamuzzaki Abu Salam",
+      "last_modified_by": "Imamuzzaki Abu Salam",
+      "branch": "fix-opencode-only-set-tab-title-when-stdout-is-a-t",
+      "last_realized_against_commit": "7757af5"
     }
   },
   "apply_order": [
-    "fix-wayland-gc-sweep-crash-by-deferring-clipboard--7agfxbdk"
+    "fix-wayland-gc-sweep-crash-by-deferring-clipboard--7agfxbdk",
+    "fix-opencode-only-set-tab-title-when-stdout-is-a-t-kmxnxn5t"
   ],
   "slug_aliases": {}
 }

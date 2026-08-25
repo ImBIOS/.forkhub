@@ -1,0 +1,336 @@
+# Sibling: fix-t3code-strip-osc-ansi-escapes-from-opencode-cl-y7shx01y
+
+**Title**: fix(t3code): strip OSC/ANSI escapes from OpenCode CLI inventory and stored agent selections (UnknownError / timeout)
+
+**Status**: applied
+
+**Reference diff**:
+
+```diff
+diff --git a/apps/server/src/provider/Layers/OpenCodeAdapter.ts b/apps/server/src/provider/Layers/OpenCodeAdapter.ts
+index 8f7e42c11..46607da71 100644
+--- a/apps/server/src/provider/Layers/OpenCodeAdapter.ts
++++ b/apps/server/src/provider/Layers/OpenCodeAdapter.ts
+@@ -25,6 +25,7 @@ import * as Scope from "effect/Scope";
+ import * as Stream from "effect/Stream";
+ import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
+ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
++import { sanitizeTerminalValue } from "@t3tools/shared/stripTerminalEscapes";
+ 
+ import { resolveAttachmentPath } from "../../attachmentStore.ts";
+ import { ServerConfig } from "../../config.ts";
+@@ -1472,12 +1473,14 @@ export function makeOpenCodeAdapter(
+         });
+       }
+ 
+-      const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
+-      const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
++      const rawAgent = getModelSelectionStringOptionValue(modelSelection, "agent");
++      const rawVariant = getModelSelectionStringOptionValue(modelSelection, "variant");
++      const agent = rawAgent ? sanitizeTerminalValue(rawAgent) : undefined;
++      const variant = rawVariant ? sanitizeTerminalValue(rawVariant) : undefined;
+ 
+       context.activeTurnId = turnId;
+       context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
+-      context.activeVariant = variant;
++      context.activeVariant = variant || undefined;
+       yield* updateProviderSession(
+         context,
+         {
+diff --git a/apps/server/src/provider/Layers/OpenCodeProvider.ts b/apps/server/src/provider/Layers/OpenCodeProvider.ts
+index 62f29c47e..947782883 100644
+--- a/apps/server/src/provider/Layers/OpenCodeProvider.ts
++++ b/apps/server/src/provider/Layers/OpenCodeProvider.ts
+@@ -11,6 +11,10 @@ import * as Effect from "effect/Effect";
+ 
+ import { createModelCapabilities } from "@t3tools/shared/model";
+ import { compareSemverVersions } from "@t3tools/shared/semver";
++import {
++  sanitizeTerminalValue,
++  stripTerminalEscapes,
++} from "@t3tools/shared/stripTerminalEscapes";
+ import {
+   buildServerProvider,
+   nonEmptyTrimmed,
+@@ -174,14 +178,18 @@ function openCodeCapabilitiesForModel(input: {
+   readonly model: ProviderListResponse["all"][number]["models"][string];
+   readonly agents: ReadonlyArray<Agent>;
+ }): ModelCapabilities {
+-  const variantValues = Object.keys(input.model.variants ?? {});
++  const variantValues = Object.keys(input.model.variants ?? {}).map(sanitizeTerminalValue);
+   const defaultVariant = inferDefaultVariant(input.providerID, variantValues);
+   const variantOptions = variantValues.map((value) =>
+     defaultVariant === value
+       ? { id: value, label: titleCaseSlug(value), isDefault: true as const }
+       : { id: value, label: titleCaseSlug(value) },
+   );
+-  const primaryAgents = input.agents.filter(
++  const sanitizedAgents = input.agents.map((agent) => ({
++    ...agent,
++    name: sanitizeTerminalValue(agent.name),
++  }));
++  const primaryAgents = sanitizedAgents.filter(
+     (agent) => !agent.hidden && (agent.mode === "primary" || agent.mode === "all"),
+   );
+   const defaultAgent = inferDefaultAgent(primaryAgents);
+@@ -390,7 +398,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
+     if (versionExit._tag === "Failure") {
+       return fallback(Cause.squash(versionExit.cause));
+     }
+-    version = parseGenericCliVersion(versionExit.value.stdout) ?? null;
++    version = parseGenericCliVersion(stripTerminalEscapes(versionExit.value.stdout)) ?? null;
+ 
+     if (!version) {
+       return fallback(
+diff --git a/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts b/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts
+index 8d5ba3533..970a627c4 100644
+--- a/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts
++++ b/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts
+@@ -154,6 +154,30 @@ describe("parseModelsCliOutput", () => {
+     NodeAssert.equal(model.id, "qwen/qwen3-coder");
+     NodeAssert.equal(model.providerID, "openrouter");
+   });
++
++  it("strips OSC title escapes from model slugs (opencode CLI leak)", () => {
++    const stdout = [
++      "\x1b]0;t3code: ready\x07opencode/big-pickle",
++      JSON.stringify({ id: "big-pickle", providerID: "opencode", name: "Big Pickle" }),
++      "\x1b]0;tmp: ready\x07anthropic/claude-sonnet-4-5",
++      JSON.stringify({ id: "claude-sonnet-4-5", providerID: "anthropic", name: "Sonnet" }),
++    ].join("\n");
++
++    const result = parseModelsCliOutput(stdout);
++    NodeAssert.equal(result.providers.size, 2);
++    NodeAssert.ok(result.providers.get("opencode")!.models["big-pickle"]);
++    NodeAssert.ok(result.providers.get("anthropic")!.models["claude-sonnet-4-5"]);
++  });
++
++  it("strips ANSI escapes from model slugs", () => {
++    const stdout = [
++      "\x1b[33mopencode/gpt-5.4\x1b[0m",
++      JSON.stringify({ id: "gpt-5.4", providerID: "opencode", name: "GPT-5.4" }),
++    ].join("\n");
++
++    const result = parseModelsCliOutput(stdout);
++    NodeAssert.ok(result.providers.get("opencode")!.models["gpt-5.4"]);
++  });
+ });
+ 
+ describe("parseAgentListCliOutput", () => {
+@@ -255,9 +279,47 @@ describe("parseAgentListCliOutput", () => {
+     NodeAssert.equal(result[0]!.hidden, true);
+     NodeAssert.equal(result[1]!.hidden, false);
+   });
++
++  it("strips OSC title escapes leaked by opencode CLI", () => {
++    // opencode <=1.18 writes `ESC ]0;<cwd>: ready BEL` to stdout for every
++    // non-help command — even when stdout is a pipe. Without stripping, the
++    // agent name becomes `ESC]0;...BELbuild` and later fails with
++    // `Agent not found: "ESC]0;...build"`.
++    const stdout = [
++      "\x1b]0;t3code: ready\x07build (primary)",
++      "  " + JSON.stringify([{ permission: "*", action: "allow", pattern: "*" }]),
++      "\x1b]0;tmp: ready\x07explore (subagent)",
++      "  " + JSON.stringify([{ permission: "read", action: "allow", pattern: "*" }]),
++    ].join("\n");
++
++    const result = parseAgentListCliOutput(stdout);
++    NodeAssert.equal(result.length, 2);
++    NodeAssert.equal(result[0]!.name, "build");
++    NodeAssert.equal(result[0]!.mode, "primary");
++    NodeAssert.equal(result[1]!.name, "explore");
++    NodeAssert.equal(result[1]!.mode, "subagent");
++  });
++
++  it("strips ANSI CSI color escapes from agent headers", () => {
++    const stdout = [
++      "\x1b[31mbuild (primary)\x1b[0m",
++      "  " + JSON.stringify([{ permission: "*", action: "allow", pattern: "*" }]),
++    ].join("\n");
++
++    const result = parseAgentListCliOutput(stdout);
++    NodeAssert.equal(result.length, 1);
++    NodeAssert.equal(result[0]!.name, "build");
++  });
+ });
+ 
+ describe("parseSkillsCliOutput", () => {
++  it("strips OSC escapes before JSON parsing (opencode CLI leak)", () => {
++    const polluted = "\x1b]0;tmp: ready\x07" + JSON.stringify([{ name: "review-pr", location: "/tmp/x", description: "d", content: "c" }]);
++    const result = parseSkillsCliOutput(polluted);
++    NodeAssert.equal(result.length, 1);
++    NodeAssert.equal(result[0]!.name, "review-pr");
++  });
++
+   it("parses skill metadata from the CLI JSON output", () => {
+     const result = parseSkillsCliOutput(
+       JSON.stringify([
+diff --git a/apps/server/src/provider/opencodeRuntime.ts b/apps/server/src/provider/opencodeRuntime.ts
+index 2ff4fa129..2aba395ee 100644
+--- a/apps/server/src/provider/opencodeRuntime.ts
++++ b/apps/server/src/provider/opencodeRuntime.ts
+@@ -34,6 +34,7 @@ import { collectStreamAsString } from "./providerSnapshot.ts";
+ import * as NetService from "@t3tools/shared/Net";
+ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+ import { resolveSpawnCommand } from "@t3tools/shared/shell";
++import { sanitizeTerminalValue, stripTerminalEscapes } from "@t3tools/shared/stripTerminalEscapes";
+ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
+ const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
+ 
+@@ -216,7 +217,7 @@ export function parseModelsCliOutput(stdout: string): {
+     string,
+     { id: string; name: string; models: { [key: string]: Model } }
+   >();
+-  const lines = stdout.split("\n");
++  const lines = stripTerminalEscapes(stdout).split("\n");
+   let currentSlug: string | null = null;
+   const jsonLines: Array<string> = [];
+ 
+@@ -269,7 +270,7 @@ export function parseModelsCliOutput(stdout: string): {
+ /** @internal */
+ export function parseAgentListCliOutput(stdout: string): ReadonlyArray<Agent> {
+   const agents: Array<Agent> = [];
+-  const lines = stdout.split("\n");
++  const lines = stripTerminalEscapes(stdout).split("\n");
+   let currentHeader: { name: string; mode: string } | null = null;
+   const blockLines: Array<string> = [];
+ 
+@@ -311,7 +312,8 @@ export function parseAgentListCliOutput(stdout: string): ReadonlyArray<Agent> {
+ 
+ /** @internal */
+ export function parseSkillsCliOutput(stdout: string): ReadonlyArray<OpenCodeSkill> {
+-  const result = decodeOpenCodeSkillsCliOutputExit(stdout);
++  const clean = stripTerminalEscapes(stdout);
++  const result = decodeOpenCodeSkillsCliOutputExit(clean);
+   return Exit.isSuccess(result) ? result.value : [];
+ }
+ 
+diff --git a/apps/server/src/textGeneration/OpenCodeTextGeneration.ts b/apps/server/src/textGeneration/OpenCodeTextGeneration.ts
+index e09c3db2c..a757d838c 100644
+--- a/apps/server/src/textGeneration/OpenCodeTextGeneration.ts
++++ b/apps/server/src/textGeneration/OpenCodeTextGeneration.ts
+@@ -15,6 +15,7 @@ import {
+ import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+ import { extractJsonObject } from "@t3tools/shared/schemaJson";
++import { sanitizeTerminalValue } from "@t3tools/shared/stripTerminalEscapes";
+ 
+ import * as ServerConfig from "../config.ts";
+ import { resolveAttachmentPath } from "../attachmentStore.ts";
+@@ -408,8 +409,10 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
+             cwd: input.cwd,
+           });
+         }
+-        const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
+-        const selectedVariant = getModelSelectionStringOptionValue(input.modelSelection, "variant");
++        const rawAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
++        const rawVariant = getModelSelectionStringOptionValue(input.modelSelection, "variant");
++        const selectedAgent = rawAgent ? sanitizeTerminalValue(rawAgent) : undefined;
++        const selectedVariant = rawVariant ? sanitizeTerminalValue(rawVariant) : undefined;
+         const promptContext = {
+           operation: input.operation,
+           cwd: input.cwd,
+diff --git a/packages/shared/package.json b/packages/shared/package.json
+index a797e97b6..e7a8c0e2c 100644
+--- a/packages/shared/package.json
++++ b/packages/shared/package.json
+@@ -226,6 +226,10 @@
+     "./usageFormat": {
+       "types": "./src/usageFormat.ts",
+       "import": "./src/usageFormat.ts"
++    },
++    "./stripTerminalEscapes": {
++      "types": "./src/stripTerminalEscapes.ts",
++      "import": "./src/stripTerminalEscapes.ts"
+     }
+   },
+   "scripts": {
+diff --git a/packages/shared/src/model.ts b/packages/shared/src/model.ts
+index bdc0c0cc8..bfca0a092 100644
+--- a/packages/shared/src/model.ts
++++ b/packages/shared/src/model.ts
+@@ -10,6 +10,8 @@ import {
+   type ProviderOptionSelection,
+ } from "@t3tools/contracts";
+ 
++import { sanitizeTerminalValue } from "./stripTerminalEscapes.ts";
++
+ const DEFAULT_PROVIDER_DRIVER_KIND = ProviderDriverKind.make("codex");
+ 
+ export interface SelectableModelOption {
+@@ -45,7 +47,9 @@ export function getProviderOptionStringSelectionValue(
+   id: string,
+ ): string | undefined {
+   const value = getProviderOptionSelectionValue(selections, id);
+-  return typeof value === "string" ? value : undefined;
++  if (typeof value !== "string") return undefined;
++  const sanitized = sanitizeTerminalValue(value);
++  return sanitized.length > 0 ? sanitized : undefined;
+ }
+ 
+ export function getProviderOptionBooleanSelectionValue(
+@@ -254,7 +258,7 @@ export function normalizeCustomModelSlug(model: string | null | undefined): stri
+     return null;
+   }
+ 
+-  return model.trim() || null;
++  return sanitizeTerminalValue(model) || null;
+ }
+ 
+ export function resolveSelectableModel(
+@@ -308,7 +312,8 @@ export function resolveModelSlugForProvider(
+ /** Trim a string, returning null for empty/missing values. */
+ export function trimOrNull<T extends string>(value: T | null | undefined): T | null {
+   if (typeof value !== "string") return null;
+-  const trimmed = value.trim() as T;
++  const sanitized = sanitizeTerminalValue(value);
++  const trimmed = sanitized.trim() as T;
+   return trimmed || null;
+ }
+ 
+diff --git a/packages/shared/src/stripTerminalEscapes.ts b/packages/shared/src/stripTerminalEscapes.ts
+new file mode 100644
+index 000000000..0c00ccc55
+--- /dev/null
++++ b/packages/shared/src/stripTerminalEscapes.ts
+@@ -0,0 +1,38 @@
++/**
++ * Strip terminal escape sequences from captured CLI stdout.
++ *
++ * OpenCode's CLI (and potentially other provider CLIs) can emit OSC title
++ * sequences (`ESC ]0;<title> BEL` / `ESC \`) and ANSI CSI color codes directly
++ * to stdout, even when stdout is a pipe. When T3 Code captures that output
++ * via `ChildProcessSpawner`, those bytes pollute structured parsing — e.g.
++ * `opencode agent list` becomes `\x1b]0;t3code: ready\x07build (primary)`
++ * instead of `build (primary)`, causing the agent inventory to store a
++ * polluted id that later fails with `Agent not found`.
++ *
++ * This is defensive for any provider CLI; the regexes are intentionally
++ * permissive and also handle Ghostty/Zsh title integrations that can leak
++ * through `shell: true` spawns.
++ */
++const OSC_RE = /\x1b\].*?(?:\x07|\x1b\\)/g;
++const CSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
++const CHARSET_RE = /\x1b[()][A-Za-z0-9]/g;
++const SINGLE_ESC_RE = /\x1b[@-Z\\-_]/g;
++
++export function stripTerminalEscapes(input: string): string {
++  if (!input || input.indexOf("\x1b") === -1) {
++    return input;
++  }
++  return input
++    .replace(OSC_RE, "")
++    .replace(CSI_RE, "")
++    .replace(CHARSET_RE, "")
++    .replace(SINGLE_ESC_RE, "");
++}
++
++/**
++ * Strip escapes and also trim the result. Useful for single-value fields
++ * like agent/variant names that should never contain control bytes.
++ */
++export function sanitizeTerminalValue(input: string): string {
++  return stripTerminalEscapes(input).trim();
++}
+
+```

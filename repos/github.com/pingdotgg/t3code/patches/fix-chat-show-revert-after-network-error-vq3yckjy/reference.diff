@@ -1,8 +1,8 @@
 diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx
-index a84433749..7de6021e6 100644
+index cb1cf6985..355565a26 100644
 --- a/apps/web/src/components/ChatView.tsx
 +++ b/apps/web/src/components/ChatView.tsx
-@@ -2647,8 +2647,46 @@ function ChatViewContent(props: ChatViewProps) {
+@@ -2726,8 +2726,46 @@ function ChatViewContent(props: ChatViewProps) {
        }
      }
  

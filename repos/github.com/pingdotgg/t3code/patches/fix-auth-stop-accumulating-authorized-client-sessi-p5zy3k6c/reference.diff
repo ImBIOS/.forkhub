@@ -1,162 +1,3 @@
-diff --git a/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts b/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts
-index e7a58baef..2c1cd66f6 100644
---- a/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts
-+++ b/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts
-@@ -1,12 +1,17 @@
-+import * as NodeServices from "@effect/platform-node/NodeServices";
- import { assert, describe, it } from "@effect/vitest";
- import * as Effect from "effect/Effect";
-+import * as FileSystem from "effect/FileSystem";
- import * as Layer from "effect/Layer";
- import * as Option from "effect/Option";
-+import * as Path from "effect/Path";
- import * as Ref from "effect/Ref";
- import * as HttpClient from "effect/unstable/http/HttpClient";
- import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
- import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
- 
-+import * as DesktopConfig from "../app/DesktopConfig.ts";
-+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
- import * as DesktopBackendPool from "./DesktopBackendPool.ts";
- import * as DesktopLocalEnvironmentAuth from "./DesktopLocalEnvironmentAuth.ts";
- 
-@@ -29,53 +34,95 @@ const config = {
-   captureOutput: true,
- };
- 
--describe("DesktopLocalEnvironmentAuth", () => {
--  it.effect("exchanges the desktop bootstrap credential only once", () =>
--    Effect.gen(function* () {
--      const requestCount = yield* Ref.make(0);
--      const httpClientLayer = Layer.succeed(
--        HttpClient.HttpClient,
--        HttpClient.make((request) =>
--          Ref.update(requestCount, (count) => count + 1).pipe(
--            Effect.as(
--              HttpClientResponse.fromWeb(
--                request,
--                new Response(
--                  JSON.stringify({
--                    access_token: "desktop-bearer-token",
--                    issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
--                    token_type: "Bearer",
--                    expires_in: 3600,
--                    scope: "orchestration:read",
--                  }),
--                  { status: 200, headers: { "content-type": "application/json" } },
--                ),
--              ),
-+function makeLayer(baseDir: string, requestCount: Ref.Ref<number>) {
-+  const httpClientLayer = Layer.succeed(
-+    HttpClient.HttpClient,
-+    HttpClient.make((request) =>
-+      Ref.update(requestCount, (count) => count + 1).pipe(
-+        Effect.as(
-+          HttpClientResponse.fromWeb(
-+            request,
-+            new Response(
-+              JSON.stringify({
-+                access_token: "desktop-bearer-token",
-+                issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-+                token_type: "Bearer",
-+                expires_in: 3600,
-+                scope: "orchestration:read",
-+              }),
-+              { status: 200, headers: { "content-type": "application/json" } },
-             ),
-           ),
-         ),
--      );
--      const poolLayer = Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
--        list: Effect.succeed([
--          {
--            id: PRIMARY_LOCAL_ENVIRONMENT_ID,
--            label: Effect.succeed("Windows"),
--            currentConfig: Effect.succeed(Option.some(config)),
--          },
--        ]),
--      } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]);
--      const testLayer = DesktopLocalEnvironmentAuth.layer.pipe(
--        Layer.provide(Layer.mergeAll(poolLayer, httpClientLayer)),
--      );
-+      ),
-+    ),
-+  );
-+
-+  const poolLayer = Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
-+    list: Effect.succeed([
-+      {
-+        id: PRIMARY_LOCAL_ENVIRONMENT_ID,
-+        label: Effect.succeed("Windows"),
-+        currentConfig: Effect.succeed(Option.some(config)),
-+      },
-+    ]),
-+  } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]);
-+
-+  const environmentLayer = DesktopEnvironment.layer({
-+    dirname: "/repo/apps/desktop/src",
-+    homeDirectory: baseDir,
-+    platform: "darwin",
-+    processArch: "x64",
-+    appVersion: "1.2.3",
-+    appPath: "/repo",
-+    isPackaged: true,
-+    resourcesPath: "/missing/resources",
-+    runningUnderArm64Translation: false,
-+  }).pipe(
-+    Layer.provide(
-+      Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ T3CODE_HOME: baseDir })),
-+    ),
-+  );
-+
-+  const dependencies = Layer.mergeAll(
-+    poolLayer,
-+    httpClientLayer,
-+    environmentLayer,
-+    NodeServices.layer,
-+  );
- 
--      const [first, second] = yield* Effect.gen(function* () {
-+  return Layer.mergeAll(
-+    DesktopLocalEnvironmentAuth.layer.pipe(Layer.provide(dependencies)),
-+    environmentLayer,
-+  );
-+}
-+
-+describe("DesktopLocalEnvironmentAuth", () => {
-+  it.effect("exchanges the desktop bootstrap credential only once per persisted instance id", () =>
-+    Effect.gen(function* () {
-+      const fileSystem = yield* FileSystem.FileSystem;
-+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
-+        prefix: "t3-desktop-local-auth-test-",
-+      });
-+      const requestCount = yield* Ref.make(0);
-+
-+      const exchangeTwiceAndReadInstanceId = Effect.gen(function* () {
-         const auth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
--        return yield* Effect.all([auth.getBearerToken, auth.getBearerToken]);
--      }).pipe(Effect.provide(testLayer));
-+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-+        const path = yield* Path.Path;
-+        const [first, second] = yield* Effect.all([auth.getBearerToken, auth.getBearerToken]);
-+
-+        assert.strictEqual(first, "desktop-bearer-token");
-+        assert.strictEqual(second, "desktop-bearer-token");
-+
-+        const instanceIdPath = path.join(environment.stateDir, "client-instance-id");
-+        return yield* fileSystem.readFileString(instanceIdPath);
-+      }).pipe(Effect.provide(makeLayer(baseDir, requestCount)));
-+
-+      const storedInstanceId = yield* exchangeTwiceAndReadInstanceId;
- 
--      assert.strictEqual(first, "desktop-bearer-token");
--      assert.strictEqual(second, "desktop-bearer-token");
-+      assert.strictEqual(storedInstanceId.trim().length > 0, true);
-       assert.strictEqual(yield* Ref.get(requestCount), 1);
--    }),
-+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
-   );
- });
 diff --git a/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts b/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts
 index 201492f0e..b80159e25 100644
 --- a/apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts
@@ -239,10 +80,10 @@ index 201492f0e..b80159e25 100644
          }).pipe(
            Effect.provideService(HttpClient.HttpClient, httpClient),
 diff --git a/apps/mobile/src/connection/platform.ts b/apps/mobile/src/connection/platform.ts
-index 852535d9d..68962c0ad 100644
+index 8e699e4c2..6aa801d78 100644
 --- a/apps/mobile/src/connection/platform.ts
 +++ b/apps/mobile/src/connection/platform.ts
-@@ -114,6 +114,7 @@ const wakeupsLayer = Wakeups.layer({
+@@ -115,6 +115,7 @@ const wakeupsLayer = Wakeups.layer({
  const capabilitiesLayer = Layer.effectContext(
    Effect.gen(function* () {
      const storage = yield* MobileStorage.MobileStorage;
@@ -250,14 +91,15 @@ index 852535d9d..68962c0ad 100644
      return Context.make(
        CloudSession,
        CloudSession.of({
-@@ -166,7 +167,9 @@ const capabilitiesLayer = Layer.effectContext(
+@@ -167,7 +168,10 @@ const capabilitiesLayer = Layer.effectContext(
        Context.add(
          ClientPresentation,
          ClientPresentation.of({
--          metadata: authClientMetadata(),
-+          metadata: authClientMetadata(
-+            Option.isSome(clientInstanceId) ? { instanceId: clientInstanceId.value } : {},
-+          ),
+-          metadata: authClientMetadata(Constants.expoConfig?.version),
++          metadata: authClientMetadata({
++            ...(Constants.expoConfig?.version ? { appVersion: Constants.expoConfig.version } : {}),
++            ...(Option.isSome(clientInstanceId) ? { instanceId: clientInstanceId.value } : {}),
++          }),
            scopes: AuthStandardClientScopes,
          }),
        ),
@@ -321,21 +163,24 @@ index 958827ee4..7cf531549 100644
        Effect.mapError(
          cloudEnvironmentLinkError("Could not exchange a managed endpoint DPoP access token."),
 diff --git a/apps/mobile/src/lib/authClientMetadata.ts b/apps/mobile/src/lib/authClientMetadata.ts
-index 09897b618..d15bd3912 100644
+index 5189c34f5..78470ec26 100644
 --- a/apps/mobile/src/lib/authClientMetadata.ts
 +++ b/apps/mobile/src/lib/authClientMetadata.ts
-@@ -1,10 +1,13 @@
+@@ -1,12 +1,15 @@
  import type { AuthClientPresentationMetadata } from "@t3tools/contracts";
  import { Platform } from "react-native";
  
--export function authClientMetadata(): AuthClientPresentationMetadata {
+-export function authClientMetadata(appVersion?: string): AuthClientPresentationMetadata {
 +export function authClientMetadata(
-+  input: { readonly instanceId?: string } = {},
++  input: { readonly appVersion?: string; readonly instanceId?: string } = {},
 +): AuthClientPresentationMetadata {
    return {
      label: "T3 Code Mobile",
      deviceType: "mobile",
      ...(Platform.OS === "ios" ? { os: "iOS" } : Platform.OS === "android" ? { os: "Android" } : {}),
+     surface: "mobile",
+-    ...(appVersion ? { appVersion } : {}),
++    ...(input.appVersion ? { appVersion: input.appVersion } : {}),
 +    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
    };
  }
@@ -390,21 +235,33 @@ index 266e8c1a9..f80544f70 100644
      loadAgentAwarenessDeviceId,
      loadAgentAwarenessRegistrationRecord,
      saveAgentAwarenessRegistrationRecord: (record) =>
+diff --git a/apps/server/src/auth/RpcAuthorization.ts b/apps/server/src/auth/RpcAuthorization.ts
+index 28ceac4ce..6baf183a9 100644
+--- a/apps/server/src/auth/RpcAuthorization.ts
++++ b/apps/server/src/auth/RpcAuthorization.ts
+@@ -26,6 +26,7 @@ export const RPC_REQUIRED_SCOPES = {
+   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,
+   [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: AuthOrchestrationReadScope,
+   [ORCHESTRATION_WS_METHODS.searchThreads]: AuthOrchestrationReadScope,
++  [ORCHESTRATION_WS_METHODS.listTasks]: AuthOrchestrationReadScope,
+   [ORCHESTRATION_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
+   [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]: AuthOrchestrationReadScope,
+   [ORCHESTRATION_WS_METHODS.subscribeThread]: AuthOrchestrationReadScope,
 diff --git a/apps/server/src/auth/SessionStore.test.ts b/apps/server/src/auth/SessionStore.test.ts
-index 334c24ef5..a4ce639ef 100644
+index 1fb01c1f0..91546f943 100644
 --- a/apps/server/src/auth/SessionStore.test.ts
 +++ b/apps/server/src/auth/SessionStore.test.ts
-@@ -47,6 +47,9 @@ const failingSessionLookupRepositoryLayer = Layer.succeed(AuthSessions.AuthSessi
-   revoke: () => Effect.fail(repositoryFailure),
+@@ -49,6 +49,9 @@ const failingSessionLookupRepositoryLayer = Layer.succeed(AuthSessions.AuthSessi
    revokeAllExcept: () => Effect.fail(repositoryFailure),
    setLastConnectedAt: () => Effect.void,
+   setClientConnection: () => Effect.void,
 +  listActiveForIdentity: () => Effect.succeed([]),
 +  updateExpiration: () => Effect.void,
 +  prune: () => Effect.succeed(0),
  });
  
  const failingSessionLookupCredentialLayer = Layer.effect(
-@@ -274,6 +277,95 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+@@ -276,6 +279,95 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
      }).pipe(Effect.provide(makeSessionStoreLayer())),
    );
  
@@ -501,10 +358,10 @@ index 334c24ef5..a4ce639ef 100644
      Effect.gen(function* () {
        const sessions = yield* SessionStore.SessionStore;
 diff --git a/apps/server/src/auth/SessionStore.ts b/apps/server/src/auth/SessionStore.ts
-index 40a1c43e0..5b5626acb 100644
+index cdcd4a1ac..5456fddd9 100644
 --- a/apps/server/src/auth/SessionStore.ts
 +++ b/apps/server/src/auth/SessionStore.ts
-@@ -441,6 +441,7 @@ function toClientMetadata(record: {
+@@ -449,6 +449,7 @@ function toClientMetadata(record: {
    readonly deviceType: AuthClientMetadata["deviceType"];
    readonly os: string | null;
    readonly browser: string | null;
@@ -512,7 +369,7 @@ index 40a1c43e0..5b5626acb 100644
  }): AuthClientMetadata {
    return {
      ...(record.label ? { label: record.label } : {}),
-@@ -449,6 +450,7 @@ function toClientMetadata(record: {
+@@ -457,6 +458,7 @@ function toClientMetadata(record: {
      deviceType: record.deviceType,
      ...(record.os ? { os: record.os } : {}),
      ...(record.browser ? { browser: record.browser } : {}),
@@ -520,7 +377,7 @@ index 40a1c43e0..5b5626acb 100644
    };
  }
  
-@@ -501,7 +503,7 @@ export const make = Effect.gen(function* () {
+@@ -509,7 +511,7 @@ export const make = Effect.gen(function* () {
            subject: row.value.subject,
            scopes: row.value.scopes,
            method: row.value.method,
@@ -529,7 +386,7 @@ index 40a1c43e0..5b5626acb 100644
            issuedAt: row.value.issuedAt,
            expiresAt: row.value.expiresAt,
            lastConnectedAt: row.value.lastConnectedAt,
-@@ -571,24 +573,118 @@ export const make = Effect.gen(function* () {
+@@ -601,24 +603,118 @@ export const make = Effect.gen(function* () {
      );
  
    const encodeClaims = Schema.encodeEffect(Schema.fromJsonString(SessionClaims));
@@ -655,7 +512,7 @@ index 40a1c43e0..5b5626acb 100644
          ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
          iat: issuedAt.epochMilliseconds,
          exp: expiresAt.epochMilliseconds,
-@@ -609,7 +705,6 @@ export const make = Effect.gen(function* () {
+@@ -639,7 +735,6 @@ export const make = Effect.gen(function* () {
          ),
        );
        const signature = signPayload(encodedPayload, signingSecret);
@@ -663,7 +520,7 @@ index 40a1c43e0..5b5626acb 100644
        yield* authSessions
          .create({
            sessionId,
-@@ -624,10 +719,18 @@ export const make = Effect.gen(function* () {
+@@ -654,10 +749,18 @@ export const make = Effect.gen(function* () {
              os: client.os ?? null,
              browser: client.browser ?? null,
            },
@@ -682,7 +539,7 @@ index 40a1c43e0..5b5626acb 100644
        yield* emitUpsert(
          toAuthClientSession({
            sessionId,
-@@ -707,7 +810,7 @@ export const make = Effect.gen(function* () {
+@@ -737,7 +840,7 @@ export const make = Effect.gen(function* () {
          sessionId: claims.sid,
          token,
          method: claims.method,
@@ -691,7 +548,7 @@ index 40a1c43e0..5b5626acb 100644
          expiresAt: expiresAt.value,
          subject: claims.sub,
          scopes: claims.scopes,
-@@ -813,7 +916,7 @@ export const make = Effect.gen(function* () {
+@@ -843,7 +946,7 @@ export const make = Effect.gen(function* () {
        sessionId: row.value.sessionId,
        token,
        method: row.value.method,
@@ -700,7 +557,7 @@ index 40a1c43e0..5b5626acb 100644
        expiresAt: row.value.expiresAt,
        subject: row.value.subject,
        scopes: row.value.scopes,
-@@ -832,7 +935,7 @@ export const make = Effect.gen(function* () {
+@@ -862,7 +965,7 @@ export const make = Effect.gen(function* () {
            subject: row.subject,
            scopes: row.scopes,
            method: row.method,
@@ -735,10 +592,10 @@ index 32a6799b0..6773e9f34 100644
    };
  }
 diff --git a/apps/server/src/persistence/AuthSessions.ts b/apps/server/src/persistence/AuthSessions.ts
-index 545688e38..9b2bd9018 100644
+index 579d3a608..b19453d76 100644
 --- a/apps/server/src/persistence/AuthSessions.ts
 +++ b/apps/server/src/persistence/AuthSessions.ts
-@@ -36,6 +36,7 @@ export const AuthSessionRecord = Schema.Struct({
+@@ -37,6 +37,7 @@ export const AuthSessionRecord = Schema.Struct({
    scopes: AuthEnvironmentScopes,
    method: ServerAuthSessionMethod,
    client: AuthSessionClientMetadataRecord,
@@ -746,7 +603,7 @@ index 545688e38..9b2bd9018 100644
    issuedAt: Schema.DateTimeUtcFromString,
    expiresAt: Schema.DateTimeUtcFromString,
    lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
-@@ -49,6 +50,7 @@ export const CreateAuthSessionInput = Schema.Struct({
+@@ -50,6 +51,7 @@ export const CreateAuthSessionInput = Schema.Struct({
    scopes: AuthEnvironmentScopes,
    method: ServerAuthSessionMethod,
    client: AuthSessionClientMetadataRecord,
@@ -754,9 +611,9 @@ index 545688e38..9b2bd9018 100644
    issuedAt: Schema.DateTimeUtcFromString,
    expiresAt: Schema.DateTimeUtcFromString,
  });
-@@ -82,6 +84,26 @@ export const SetAuthSessionLastConnectedAtInput = Schema.Struct({
+@@ -90,6 +92,26 @@ export const SetAuthSessionClientConnectionInput = Schema.Struct({
  });
- export type SetAuthSessionLastConnectedAtInput = typeof SetAuthSessionLastConnectedAtInput.Type;
+ export type SetAuthSessionClientConnectionInput = typeof SetAuthSessionClientConnectionInput.Type;
  
 +export const ListActiveAuthSessionsForIdentityInput = Schema.Struct({
 +  now: Schema.DateTimeUtcFromString,
@@ -781,9 +638,9 @@ index 545688e38..9b2bd9018 100644
  export class AuthSessionRepository extends Context.Service<
    AuthSessionRepository,
    {
-@@ -103,6 +125,15 @@ export class AuthSessionRepository extends Context.Service<
-     readonly setLastConnectedAt: (
-       input: SetAuthSessionLastConnectedAtInput,
+@@ -114,6 +136,15 @@ export class AuthSessionRepository extends Context.Service<
+     readonly setClientConnection: (
+       input: SetAuthSessionClientConnectionInput,
      ) => Effect.Effect<void, AuthSessionRepositoryError>;
 +    readonly listActiveForIdentity: (
 +      input: ListActiveAuthSessionsForIdentityInput,
@@ -797,7 +654,7 @@ index 545688e38..9b2bd9018 100644
    }
  >()("t3/persistence/AuthSessions/AuthSessionRepository") {}
  
-@@ -117,6 +148,7 @@ const AuthSessionDbRow = Schema.Struct({
+@@ -128,6 +159,7 @@ const AuthSessionDbRow = Schema.Struct({
    clientDeviceType: Schema.Literals(["desktop", "mobile", "tablet", "bot", "unknown"]),
    clientOs: Schema.NullOr(Schema.String),
    clientBrowser: Schema.NullOr(Schema.String),
@@ -805,7 +662,7 @@ index 545688e38..9b2bd9018 100644
    issuedAt: Schema.DateTimeUtcFromString,
    expiresAt: Schema.DateTimeUtcFromString,
    lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
-@@ -134,6 +166,7 @@ const AuthSessionRawDbRow = Schema.Struct({
+@@ -145,6 +177,7 @@ const AuthSessionRawDbRow = Schema.Struct({
    clientDeviceType: Schema.Unknown,
    clientOs: Schema.Unknown,
    clientBrowser: Schema.Unknown,
@@ -813,7 +670,7 @@ index 545688e38..9b2bd9018 100644
    issuedAt: Schema.Unknown,
    expiresAt: Schema.Unknown,
    lastConnectedAt: Schema.Unknown,
-@@ -156,6 +189,7 @@ function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): AuthSessionReco
+@@ -167,6 +200,7 @@ function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): AuthSessionReco
        os: row.clientOs,
        browser: row.clientBrowser,
      },
@@ -821,7 +678,7 @@ index 545688e38..9b2bd9018 100644
      issuedAt: row.issuedAt,
      expiresAt: row.expiresAt,
      lastConnectedAt: row.lastConnectedAt,
-@@ -196,6 +230,7 @@ export const make = Effect.gen(function* () {
+@@ -207,6 +241,7 @@ export const make = Effect.gen(function* () {
            client_device_type,
            client_os,
            client_browser,
@@ -829,7 +686,7 @@ index 545688e38..9b2bd9018 100644
            issued_at,
            expires_at,
            revoked_at
-@@ -211,6 +246,7 @@ export const make = Effect.gen(function* () {
+@@ -222,6 +257,7 @@ export const make = Effect.gen(function* () {
            ${input.client.deviceType},
            ${input.client.os},
            ${input.client.browser},
@@ -837,7 +694,7 @@ index 545688e38..9b2bd9018 100644
            ${input.issuedAt},
            ${input.expiresAt},
            NULL
-@@ -218,56 +254,44 @@ export const make = Effect.gen(function* () {
+@@ -229,56 +265,44 @@ export const make = Effect.gen(function* () {
        `,
    });
  
@@ -923,7 +780,7 @@ index 545688e38..9b2bd9018 100644
    });
  
    const setLastConnectedAtRow = SqlSchema.void({
-@@ -281,6 +305,29 @@ export const make = Effect.gen(function* () {
+@@ -306,6 +330,28 @@ export const make = Effect.gen(function* () {
        `,
    });
  
@@ -949,11 +806,10 @@ index 545688e38..9b2bd9018 100644
 +        RETURNING session_id AS "sessionId"
 +      `,
 +  });
-+
    const revokeSessionRows = SqlSchema.findAll({
      Request: RevokeAuthSessionInput,
      Result: Schema.Struct({ sessionId: AuthSessionId }),
-@@ -404,6 +451,55 @@ export const make = Effect.gen(function* () {
+@@ -440,6 +486,54 @@ export const make = Effect.gen(function* () {
        ),
      );
  
@@ -1005,14 +861,13 @@ index 545688e38..9b2bd9018 100644
 +      ),
 +      Effect.map((rows) => rows.length),
 +    );
-+
    return {
      create,
      getById,
-@@ -411,6 +507,9 @@ export const make = Effect.gen(function* () {
-     revoke,
+@@ -448,6 +542,9 @@ export const make = Effect.gen(function* () {
      revokeAllExcept,
      setLastConnectedAt,
+     setClientConnection,
 +    listActiveForIdentity,
 +    updateExpiration,
 +    prune,
@@ -1031,23 +886,213 @@ index 03edaec77..865d3810a 100644
  ]);
  export type PersistenceErrorCorrelation = typeof PersistenceErrorCorrelation.Type;
  
+diff --git a/apps/server/src/persistence/Layers/OrchestrationEventStore.ts b/apps/server/src/persistence/Layers/OrchestrationEventStore.ts
+index 18d0e9aa5..29d50e631 100644
+--- a/apps/server/src/persistence/Layers/OrchestrationEventStore.ts
++++ b/apps/server/src/persistence/Layers/OrchestrationEventStore.ts
+@@ -9,6 +9,7 @@ import {
+   OrchestrationEventMetadata,
+   OrchestrationEventType,
+   ProjectId,
++  TaskId,
+   ThreadId,
+ } from "@t3tools/contracts";
+ import * as SqlClient from "effect/unstable/sql/SqlClient";
+@@ -35,7 +36,7 @@ const EventMetadataFromJsonString = Schema.fromJsonString(OrchestrationEventMeta
+ const AppendEventRequestSchema = Schema.Struct({
+   eventId: EventId,
+   aggregateKind: OrchestrationAggregateKind,
+-  streamId: Schema.Union([ProjectId, ThreadId]),
++  streamId: Schema.Union([ProjectId, ThreadId, TaskId]),
+   type: OrchestrationEventType,
+   causationEventId: Schema.NullOr(EventId),
+   correlationId: Schema.NullOr(CommandId),
+@@ -51,7 +52,7 @@ const OrchestrationEventPersistedRowSchema = Schema.Struct({
+   eventId: EventId,
+   type: OrchestrationEventType,
+   aggregateKind: OrchestrationAggregateKind,
+-  aggregateId: Schema.Union([ProjectId, ThreadId]),
++  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId]),
+   occurredAt: IsoDateTime,
+   commandId: Schema.NullOr(CommandId),
+   causationEventId: Schema.NullOr(EventId),
+diff --git a/apps/server/src/persistence/Layers/ProjectionTasks.ts b/apps/server/src/persistence/Layers/ProjectionTasks.ts
+new file mode 100644
+index 000000000..ccfe765d1
+--- /dev/null
++++ b/apps/server/src/persistence/Layers/ProjectionTasks.ts
+@@ -0,0 +1,150 @@
++import * as SqlClient from "effect/unstable/sql/SqlClient";
++import * as SqlSchema from "effect/unstable/sql/SqlSchema";
++import * as Effect from "effect/Effect";
++import * as Layer from "effect/Layer";
++
++import { toPersistenceSqlError } from "../Errors.ts";
++
++import {
++  ProjectionTask,
++  ProjectionTaskRepository,
++  type ProjectionTaskRepositoryShape,
++  DeleteProjectionTaskInput,
++  GetProjectionTaskInput,
++  ListProjectionTasksByProjectInput,
++} from "../Services/ProjectionTasks.ts";
++
++const makeProjectionTaskRepository = Effect.gen(function* () {
++  const sql = yield* SqlClient.SqlClient;
++
++  const upsertProjectionTaskRow = SqlSchema.void({
++    Request: ProjectionTask,
++    execute: (row) =>
++      sql`
++        INSERT INTO projection_tasks (
++          task_id,
++          project_id,
++          thread_id,
++          name,
++          prompt,
++          schedule_json,
++          created_at,
++          updated_at,
++          last_fired_at,
++          next_fire_at,
++          cancelled_at
++        )
++        VALUES (
++          ${row.taskId},
++          ${row.projectId},
++          ${row.threadId},
++          ${row.name ?? null},
++          ${row.prompt},
++          ${row.scheduleJson},
++          ${row.createdAt},
++          ${row.updatedAt},
++          ${row.lastFiredAt},
++          ${row.nextFireAt},
++          ${row.cancelledAt}
++        )
++        ON CONFLICT (task_id)
++        DO UPDATE SET
++          project_id = excluded.project_id,
++          thread_id = excluded.thread_id,
++          name = excluded.name,
++          prompt = excluded.prompt,
++          schedule_json = excluded.schedule_json,
++          created_at = excluded.created_at,
++          updated_at = excluded.updated_at,
++          last_fired_at = excluded.last_fired_at,
++          next_fire_at = excluded.next_fire_at,
++          cancelled_at = excluded.cancelled_at
++      `,
++  });
++
++  const getProjectionTaskRow = SqlSchema.findOneOption({
++    Request: GetProjectionTaskInput,
++    Result: ProjectionTask,
++    execute: ({ taskId }) =>
++      sql`
++        SELECT
++          task_id AS "taskId",
++          project_id AS "projectId",
++          thread_id AS "threadId",
++          name,
++          prompt,
++          schedule_json AS "scheduleJson",
++          created_at AS "createdAt",
++          updated_at AS "updatedAt",
++          last_fired_at AS "lastFiredAt",
++          next_fire_at AS "nextFireAt",
++          cancelled_at AS "cancelledAt"
++        FROM projection_tasks
++        WHERE task_id = ${taskId}
++      `,
++  });
++
++  const listProjectionTaskRowsByProject = SqlSchema.findAll({
++    Request: ListProjectionTasksByProjectInput,
++    Result: ProjectionTask,
++    execute: ({ projectId }) =>
++      sql`
++        SELECT
++          task_id AS "taskId",
++          project_id AS "projectId",
++          thread_id AS "threadId",
++          name,
++          prompt,
++          schedule_json AS "scheduleJson",
++          created_at AS "createdAt",
++          updated_at AS "updatedAt",
++          last_fired_at AS "lastFiredAt",
++          next_fire_at AS "nextFireAt",
++          cancelled_at AS "cancelledAt"
++        FROM projection_tasks
++        WHERE project_id = ${projectId}
++        ORDER BY created_at ASC, task_id ASC
++      `,
++  });
++
++  const deleteProjectionTaskRow = SqlSchema.void({
++    Request: DeleteProjectionTaskInput,
++    execute: ({ taskId }) =>
++      sql`
++        DELETE FROM projection_tasks
++        WHERE task_id = ${taskId}
++      `,
++  });
++
++  const upsert: ProjectionTaskRepositoryShape["upsert"] = (row) =>
++    upsertProjectionTaskRow(row).pipe(
++      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.upsert:query")),
++    );
++
++  const getById: ProjectionTaskRepositoryShape["getById"] = (input) =>
++    getProjectionTaskRow(input).pipe(
++      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.getById:query")),
++    );
++
++  const listByProjectId: ProjectionTaskRepositoryShape["listByProjectId"] = (input) =>
++    listProjectionTaskRowsByProject(input).pipe(
++      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.listByProjectId:query")),
++    );
++
++  const deleteById: ProjectionTaskRepositoryShape["deleteById"] = (input) =>
++    deleteProjectionTaskRow(input).pipe(
++      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.deleteById:query")),
++    );
++
++  return {
++    upsert,
++    getById,
++    listByProjectId,
++    deleteById,
++  } satisfies ProjectionTaskRepositoryShape;
++});
++
++export const ProjectionTaskRepositoryLive = Layer.effect(
++  ProjectionTaskRepository,
++  makeProjectionTaskRepository,
++);
 diff --git a/apps/server/src/persistence/Migrations.ts b/apps/server/src/persistence/Migrations.ts
-index b137cedfb..62c3d3e90 100644
+index 170cb3992..7a8a00d45 100644
 --- a/apps/server/src/persistence/Migrations.ts
 +++ b/apps/server/src/persistence/Migrations.ts
-@@ -53,6 +53,7 @@ import Migration0037 from "./Migrations/037_ProjectionTurnsKeysetIndex.ts";
- import Migration0038 from "./Migrations/038_ProjectionThreadsPinOrderKey.ts";
+@@ -54,6 +54,9 @@ import Migration0038 from "./Migrations/038_ProjectionThreadsPinOrderKey.ts";
  import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
  import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
-+import Migration0041 from "./Migrations/041_AuthSessionClientInstanceId.ts";
+ import Migration0041 from "./Migrations/041_AuthSessionClientConnection.ts";
++import Migration0042 from "./Migrations/041_AuthSessionClientInstanceId.ts";
++import Migration0043 from "./Migrations/042_ProjectionTasks.ts";
++import Migration0044 from "./Migrations/044_CleanOscPollution.ts";
  
  /**
   * Migration loader with all migrations defined inline.
-@@ -105,6 +106,7 @@ export const migrationEntries = [
-   [38, "ProjectionThreadsPinOrderKey", Migration0038],
+@@ -107,6 +110,9 @@ export const migrationEntries = [
    [39, "ProjectionProjectsDefaultThreadEnvMode", Migration0039],
    [40, "ProjectionProjectFaviconPath", Migration0040],
-+  [41, "AuthSessionClientInstanceId", Migration0041],
+   [41, "AuthSessionClientConnection", Migration0041],
++  [42, "AuthSessionClientInstanceId", Migration0042],
++  [43, "ProjectionTasks", Migration0043],
++  [44, "CleanOscPollution", Migration0044],
  ] as const;
  
  export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -1074,6 +1119,194 @@ index 000000000..1b4823f65
 +    `;
 +  }
 +});
+diff --git a/apps/server/src/persistence/Migrations/042_ProjectionTasks.ts b/apps/server/src/persistence/Migrations/042_ProjectionTasks.ts
+new file mode 100644
+index 000000000..1f4833034
+--- /dev/null
++++ b/apps/server/src/persistence/Migrations/042_ProjectionTasks.ts
+@@ -0,0 +1,28 @@
++import * as Effect from "effect/Effect";
++import * as SqlClient from "effect/unstable/sql/SqlClient";
++
++export default Effect.gen(function* () {
++  const sql = yield* SqlClient.SqlClient;
++
++  yield* sql`
++    CREATE TABLE IF NOT EXISTS projection_tasks (
++      task_id TEXT PRIMARY KEY,
++      project_id TEXT NOT NULL,
++      thread_id TEXT NOT NULL,
++      name TEXT,
++      prompt TEXT NOT NULL,
++      schedule_json TEXT NOT NULL,
++      created_at TEXT NOT NULL,
++      updated_at TEXT NOT NULL,
++      last_fired_at TEXT,
++      next_fire_at TEXT,
++      cancelled_at TEXT
++    )
++  `;
++
++  yield* sql`
++    CREATE INDEX IF NOT EXISTS idx_projection_tasks_next_fire_at
++    ON projection_tasks (next_fire_at)
++    WHERE next_fire_at IS NOT NULL AND cancelled_at IS NULL
++  `;
++});
+diff --git a/apps/server/src/persistence/Migrations/044_CleanOscPollution.ts b/apps/server/src/persistence/Migrations/044_CleanOscPollution.ts
+new file mode 100644
+index 000000000..6b9f1dbc9
+--- /dev/null
++++ b/apps/server/src/persistence/Migrations/044_CleanOscPollution.ts
+@@ -0,0 +1,148 @@
++import * as Effect from "effect/Effect";
++import * as SqlClient from "effect/unstable/sql/SqlClient";
++import { stripTerminalEscapes } from "@t3tools/shared/stripTerminalEscapes";
++
++function sanitizeValue(value: unknown): unknown {
++  if (typeof value === "string") {
++    return stripTerminalEscapes(value);
++  }
++  if (Array.isArray(value)) {
++    return value.map(sanitizeValue);
++  }
++  if (value !== null && typeof value === "object") {
++    const record = value as Record<string, unknown>;
++    const next: Record<string, unknown> = {};
++    for (const [key, val] of Object.entries(record)) {
++      next[key] = sanitizeValue(val);
++    }
++    return next;
++  }
++  return value;
++}
++
++function needsSanitizeJson(raw: string | null): raw is string {
++  if (typeof raw !== "string" || raw.length === 0) return false;
++  // Fast check for literal \u001b (6 chars) or raw ESC
++  return (
++    raw.includes("\\u001b") ||
++    raw.includes("\u001b") ||
++    raw.includes("\\u0007") ||
++    raw.includes("\u0007")
++  );
++}
++
++function sanitizeJsonString(raw: string): string | null {
++  try {
++    const parsed = JSON.parse(raw);
++    const sanitized = sanitizeValue(parsed);
++    // Only return new string if changed
++    const nextRaw = JSON.stringify(sanitized);
++    return nextRaw !== raw ? nextRaw : null;
++  } catch {
++    // Not JSON, treat as plain text
++    const sanitized = stripTerminalEscapes(raw);
++    // Also handle literal \u001b in raw JSON text that wasn't parsed (fallback)
++    let next = sanitized;
++    if (next.includes("\\u001b")) {
++      next = next.replace(/\\u001b/g, "").replace(/\\u0007/g, "");
++      next = next.replace(/\u001b\].*?(?:\u0007|\u001b\\)/g, "");
++    }
++    return next !== raw ? next : null;
++  }
++}
++
++export default Effect.gen(function* () {
++  const sql = yield* SqlClient.SqlClient;
++
++  // --- provider_session_runtime.runtime_payload_json ---
++  const runtimeRows = yield* sql<{ thread_id: string; runtime_payload_json: string | null }>`
++    SELECT thread_id, runtime_payload_json FROM provider_session_runtime
++    WHERE runtime_payload_json IS NOT NULL
++      AND (instr(runtime_payload_json, 'u001b') > 0 OR instr(runtime_payload_json, char(27)) > 0)
++  `;
++  for (const row of runtimeRows) {
++    const raw = row.runtime_payload_json;
++    if (!needsSanitizeJson(raw)) continue;
++    const next = sanitizeJsonString(raw);
++    if (next !== null) {
++      yield* sql`UPDATE provider_session_runtime SET runtime_payload_json = ${next} WHERE thread_id = ${row.thread_id}`;
++    }
++  }
++
++  // --- projection_threads.model_selection_json ---
++  const threadRows = yield* sql<{ thread_id: string; model_selection_json: string | null }>`
++    SELECT thread_id, model_selection_json FROM projection_threads
++    WHERE model_selection_json IS NOT NULL
++      AND (instr(model_selection_json, 'u001b') > 0 OR instr(model_selection_json, char(27)) > 0)
++  `;
++  for (const row of threadRows) {
++    const raw = row.model_selection_json;
++    if (!needsSanitizeJson(raw)) continue;
++    const next = sanitizeJsonString(raw);
++    if (next !== null) {
++      yield* sql`UPDATE projection_threads SET model_selection_json = ${next} WHERE thread_id = ${row.thread_id}`;
++    }
++  }
++
++  // --- projection_projects.default_model_selection_json ---
++  const projectRows = yield* sql<{
++    project_id: string;
++    default_model_selection_json: string | null;
++  }>`
++    SELECT project_id, default_model_selection_json FROM projection_projects
++    WHERE default_model_selection_json IS NOT NULL
++      AND (instr(default_model_selection_json, 'u001b') > 0 OR instr(default_model_selection_json, char(27)) > 0)
++  `;
++  for (const row of projectRows) {
++    const raw = row.default_model_selection_json;
++    if (!needsSanitizeJson(raw)) continue;
++    const next = sanitizeJsonString(raw);
++    if (next !== null) {
++      yield* sql`UPDATE projection_projects SET default_model_selection_json = ${next} WHERE project_id = ${row.project_id}`;
++    }
++  }
++
++  // --- orchestration_events.payload_json (event-sourced, but clean for read model) ---
++  const eventRows = yield* sql<{ sequence: number; payload_json: string }>`
++    SELECT sequence, payload_json FROM orchestration_events
++    WHERE instr(payload_json, 'u001b') > 0 OR instr(payload_json, char(27)) > 0
++  `;
++  for (const row of eventRows) {
++    const raw = row.payload_json;
++    if (!needsSanitizeJson(raw)) continue;
++    const next = sanitizeJsonString(raw);
++    if (next !== null) {
++      yield* sql`UPDATE orchestration_events SET payload_json = ${next} WHERE sequence = ${row.sequence}`;
++    }
++  }
++
++  // --- projection_thread_activities.payload_json ---
++  const activityRows = yield* sql<{ activity_id: string; payload_json: string }>`
++    SELECT activity_id, payload_json FROM projection_thread_activities
++    WHERE instr(payload_json, 'u001b') > 0 OR instr(payload_json, char(27)) > 0
++  `;
++  for (const row of activityRows) {
++    const raw = row.payload_json;
++    if (!needsSanitizeJson(raw)) continue;
++    const next = sanitizeJsonString(raw);
++    if (next !== null) {
++      yield* sql`UPDATE projection_thread_activities SET payload_json = ${next} WHERE activity_id = ${row.activity_id}`;
++    }
++  }
++
++  // --- projection_thread_messages.text (plain text, not JSON) ---
++  const messageRows = yield* sql<{ message_id: string; text: string }>`
++    SELECT message_id, text FROM projection_thread_messages
++    WHERE instr(text, 'u001b') > 0 OR instr(text, char(27)) > 0
++  `;
++  for (const row of messageRows) {
++    const raw = row.text;
++    let next = stripTerminalEscapes(raw);
++    if (next.includes("\\u001b")) {
++      next = next.replace(/\\u001b/g, "").replace(/\\u0007/g, "");
++    }
++    if (next !== raw) {
++      yield* sql`UPDATE projection_thread_messages SET text = ${next} WHERE message_id = ${row.message_id}`;
++    }
++  }
++});
 diff --git a/apps/server/src/persistence/RepositoryErrorCorrelation.test.ts b/apps/server/src/persistence/RepositoryErrorCorrelation.test.ts
 index 379b06e2a..426472b27 100644
 --- a/apps/server/src/persistence/RepositoryErrorCorrelation.test.ts
@@ -1094,98 +1327,121 @@ index 379b06e2a..426472b27 100644
            issuedAt,
            expiresAt,
          }),
-diff --git a/apps/server/src/server.test.ts b/apps/server/src/server.test.ts
-index 7cda53f25..3d1f6df9f 100644
---- a/apps/server/src/server.test.ts
-+++ b/apps/server/src/server.test.ts
-@@ -1057,6 +1057,7 @@ const exchangeAccessToken = (
-       readonly label?: string;
-       readonly deviceType?: string;
-       readonly os?: string;
-+      readonly instanceId?: string;
-     };
-   },
- ) =>
-@@ -1081,6 +1082,9 @@ const exchangeAccessToken = (
-           ? { client_device_type: options.clientMetadata.deviceType }
-           : {}),
-         ...(options?.clientMetadata?.os ? { client_os: options.clientMetadata.os } : {}),
-+        ...(options?.clientMetadata?.instanceId
-+          ? { client_instance_id: options.clientMetadata.instanceId }
-+          : {}),
-       }).toString(),
-     });
-     const body = yield* responseJsonEffect<{
-@@ -1698,6 +1702,67 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
-     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-   );
- 
-+  it.effect(
-+    "collapses repeated token exchanges with one client instance onto a single session",
-+    () =>
-+      Effect.gen(function* () {
-+        yield* buildAppUnderTest({
-+          config: {
-+            host: "0.0.0.0",
-+          },
-+        });
+diff --git a/apps/server/src/persistence/Services/OrchestrationCommandReceipts.ts b/apps/server/src/persistence/Services/OrchestrationCommandReceipts.ts
+index 149898482..5b1668384 100644
+--- a/apps/server/src/persistence/Services/OrchestrationCommandReceipts.ts
++++ b/apps/server/src/persistence/Services/OrchestrationCommandReceipts.ts
+@@ -13,6 +13,7 @@ import {
+   OrchestrationAggregateKind,
+   OrchestrationCommandReceiptStatus,
+   ProjectId,
++  TaskId,
+   ThreadId,
+ } from "@t3tools/contracts";
+ import * as Option from "effect/Option";
+@@ -25,7 +26,7 @@ import type { OrchestrationCommandReceiptRepositoryError } from "../Errors.ts";
+ export const OrchestrationCommandReceipt = Schema.Struct({
+   commandId: CommandId,
+   aggregateKind: OrchestrationAggregateKind,
+-  aggregateId: Schema.Union([ProjectId, ThreadId]),
++  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId]),
+   acceptedAt: IsoDateTime,
+   resultSequence: NonNegativeInt,
+   status: OrchestrationCommandReceiptStatus,
+diff --git a/apps/server/src/persistence/Services/ProjectionTasks.ts b/apps/server/src/persistence/Services/ProjectionTasks.ts
+new file mode 100644
+index 000000000..182dbeb31
+--- /dev/null
++++ b/apps/server/src/persistence/Services/ProjectionTasks.ts
+@@ -0,0 +1,86 @@
++/**
++ * ProjectionTaskRepository - Repository interface for scheduled tasks.
++ *
++ * Owns persistence operations for projected task records in the orchestration
++ * read model.
++ *
++ * @module ProjectionTaskRepository
++ */
++import { IsoDateTime, ProjectId, TaskId, ThreadId } from "@t3tools/contracts";
++import * as Option from "effect/Option";
++import * as Schema from "effect/Schema";
++import * as Context from "effect/Context";
++import type * as Effect from "effect/Effect";
 +
-+        const ownerCookie = yield* getAuthenticatedSessionCookieHeader();
-+        const pairingResponse = yield* HttpClient.post("/api/auth/pairing-token", {
-+          headers: {
-+            cookie: ownerCookie,
-+          },
-+          body: yield* HttpBody.json({}),
-+        });
-+        const pairingBody = (yield* pairingResponse.json) as {
-+          readonly credential: string;
-+        };
++import type { ProjectionRepositoryError } from "../Errors.ts";
 +
-+        // Pairing credentials are one-time; the desktop bootstrap credential is
-+        // long-lived, which is what repeated launches present.
-+        const firstExchange = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
-+          clientMetadata: {
-+            label: "T3 Code Desktop",
-+            deviceType: "desktop",
-+            instanceId: "desktop-instance-1",
-+          },
-+        });
-+        const secondExchange = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
-+          clientMetadata: {
-+            label: "T3 Code Desktop",
-+            deviceType: "desktop",
-+            instanceId: "desktop-instance-1",
-+          },
-+        });
++export const ProjectionTask = Schema.Struct({
++  taskId: TaskId,
++  projectId: ProjectId,
++  threadId: ThreadId,
++  name: Schema.optional(Schema.NullOr(Schema.String)),
++  prompt: Schema.String,
++  scheduleJson: Schema.String,
++  createdAt: IsoDateTime,
++  updatedAt: IsoDateTime,
++  lastFiredAt: Schema.NullOr(IsoDateTime),
++  nextFireAt: Schema.NullOr(IsoDateTime),
++  cancelledAt: Schema.NullOr(IsoDateTime),
++});
++export type ProjectionTask = typeof ProjectionTask.Type;
 +
-+        const clientsResponse = yield* HttpClient.get("/api/auth/clients", {
-+          headers: {
-+            cookie: ownerCookie,
-+          },
-+        });
-+        const clients = (yield* clientsResponse.json) as ReadonlyArray<{
-+          readonly current: boolean;
-+          readonly client: {
-+            readonly label?: string;
-+            readonly instanceId?: string;
-+          };
-+        }>;
-+        const instanceSessions = clients.filter(
-+          (client) => client.client.instanceId === "desktop-instance-1",
-+        );
++export const GetProjectionTaskInput = Schema.Struct({
++  taskId: TaskId,
++});
++export type GetProjectionTaskInput = typeof GetProjectionTaskInput.Type;
 +
-+        assert.equal(firstExchange.response.status, 200);
-+        assert.equal(secondExchange.response.status, 200);
-+        assert.equal(clientsResponse.status, 200);
-+        assert.equal(instanceSessions.length, 1);
-+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-+  );
++export const DeleteProjectionTaskInput = Schema.Struct({
++  taskId: TaskId,
++});
++export type DeleteProjectionTaskInput = typeof DeleteProjectionTaskInput.Type;
 +
-   it.effect(
-     "exchanges a bootstrap credential for a DPoP-bound access token without bearer downgrade",
-     () =>
++export const ListProjectionTasksByProjectInput = Schema.Struct({
++  projectId: ProjectId,
++});
++export type ListProjectionTasksByProjectInput = typeof ListProjectionTasksByProjectInput.Type;
++
++/**
++ * ProjectionTaskRepositoryShape - Service API for projected task records.
++ */
++export interface ProjectionTaskRepositoryShape {
++  /**
++   * Insert or replace a projected task row.
++   *
++   * Upserts by `taskId`.
++   */
++  readonly upsert: (task: ProjectionTask) => Effect.Effect<void, ProjectionRepositoryError>;
++
++  /**
++   * Read a projected task row by id.
++   */
++  readonly getById: (
++    input: GetProjectionTaskInput,
++  ) => Effect.Effect<Option.Option<ProjectionTask>, ProjectionRepositoryError>;
++
++  /**
++   * List projected tasks for a project.
++   */
++  readonly listByProjectId: (
++    input: ListProjectionTasksByProjectInput,
++  ) => Effect.Effect<ReadonlyArray<ProjectionTask>, ProjectionRepositoryError>;
++
++  /**
++   * Delete projected task state by id.
++   */
++  readonly deleteById: (
++    input: DeleteProjectionTaskInput,
++  ) => Effect.Effect<void, ProjectionRepositoryError>;
++}
++
++/**
++ * ProjectionTaskRepository - Service tag for task persistence.
++ */
++export class ProjectionTaskRepository extends Context.Service<
++  ProjectionTaskRepository,
++  ProjectionTaskRepositoryShape
++>()("t3/persistence/Services/ProjectionTasks/ProjectionTaskRepository") {}
 diff --git a/apps/web/src/connection/platform.ts b/apps/web/src/connection/platform.ts
-index c7652136f..98b6d4044 100644
+index daead0bc6..29ef5d5a2 100644
 --- a/apps/web/src/connection/platform.ts
 +++ b/apps/web/src/connection/platform.ts
 @@ -21,7 +21,10 @@ import {
@@ -1200,7 +1456,7 @@ index c7652136f..98b6d4044 100644
  import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
  import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
  import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
-@@ -50,6 +53,7 @@ import {
+@@ -51,6 +54,7 @@ import {
  } from "../environments/primary/target";
  import { clearComposerDraftsEnvironment } from "../composerDraftStore";
  import { isHostedStaticApp } from "../hostedPairing";
@@ -1208,10 +1464,10 @@ index c7652136f..98b6d4044 100644
  import { appAtomRegistry } from "../rpc/atomRegistry";
  import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
  import {
-@@ -120,9 +124,21 @@ function clientMetadata() {
-     label: desktop ? "T3 Code Desktop" : "T3 Code Web",
-     deviceType: "desktop" as const,
+@@ -123,9 +127,21 @@ function clientMetadata() {
      ...(platform === "" ? {} : { os: platform }),
+     surface: desktop ? ("desktop" as const) : ("web" as const),
+     ...(APP_VERSION === "0.0.0" ? {} : { appVersion: APP_VERSION }),
 +    instanceId: clientInstanceId(),
    };
  }
@@ -1230,39 +1486,6 @@ index c7652136f..98b6d4044 100644
  function sshPreparationError(cause: unknown) {
    const message = cause instanceof Error ? cause.message : String(cause);
    if (message.toLowerCase().includes("cancel")) {
-diff --git a/docs/internals/environment-auth.md b/docs/internals/environment-auth.md
-index 5f4f5b6e9..9af8d6fb8 100644
---- a/docs/internals/environment-auth.md
-+++ b/docs/internals/environment-auth.md
-@@ -50,11 +50,23 @@ requested_token_type=urn:ietf:params:oauth:token-type:access_token
- scope=orchestration:read orchestration:operate terminal:operate review:write relay:read
- ```
- 
--Clients may additionally submit `client_label`, `client_device_type`, and
--`client_os` extension parameters so the authorized-clients UI can identify the
--device that established the session. These are presentation hints only; the
--environment derives transport metadata such as IP address and user agent from
--the request and does not use these fields for authorization.
-+Clients may additionally submit `client_label`, `client_device_type`,
-+`client_os`, and `client_instance_id` extension parameters so the
-+authorized-clients UI can identify the device that established the session.
-+These are presentation hints only; the environment derives transport metadata
-+such as IP address and user agent from the request and does not use these
-+fields for authorization.
-+
-+`client_instance_id` is a stable per-install identifier. When it is present on
-+a bearer exchange, issuance collapses onto the client's existing session: a
-+compatible active session for the same subject, method, and instance id has its
-+expiry extended and a fresh token is signed against it, so app relaunches and
-+window reloads do not accumulate authorized-client rows. If no compatible
-+session exists (for example when requested scopes widen), prior sessions for
-+that instance are revoked before the replacement is issued. DPoP exchanges are
-+exempt because their key thumbprint is not persisted, so their sessions cannot
-+be safely reused. Issuance also prunes sessions whose rows have expired or been
-+revoked.
- 
- The response has the token-exchange shape:
- 
 diff --git a/packages/client-runtime/src/authorization/clientInstanceId.ts b/packages/client-runtime/src/authorization/clientInstanceId.ts
 new file mode 100644
 index 000000000..4f50cfafb
@@ -1300,7 +1523,7 @@ index 6236b5922..4bc82c056 100644
    type AuthorizedRemoteEnvironment,
    type RelayEnvironmentAuthorization,
 diff --git a/packages/client-runtime/src/authorization/remote.ts b/packages/client-runtime/src/authorization/remote.ts
-index 69c157d0e..b0197a819 100644
+index 895fee836..dda82c2e7 100644
 --- a/packages/client-runtime/src/authorization/remote.ts
 +++ b/packages/client-runtime/src/authorization/remote.ts
 @@ -30,6 +30,7 @@ const clientMetadataTokenExchangeFields = (
@@ -1310,15 +1533,15 @@ index 69c157d0e..b0197a819 100644
 +  ...(clientMetadata?.instanceId ? { client_instance_id: clientMetadata.instanceId } : {}),
  });
  
- export const exchangeRemoteDpopAccessToken = Effect.fn(
+ // The server reads these off the /ws upgrade URL next to wsTicket. Optional on
 diff --git a/packages/contracts/src/auth.ts b/packages/contracts/src/auth.ts
-index 70b289975..2c885f22a 100644
+index 0af93dc03..8ec0e9b61 100644
 --- a/packages/contracts/src/auth.ts
 +++ b/packages/contracts/src/auth.ts
-@@ -169,6 +169,10 @@ export const AuthClientPresentationMetadata = Schema.Struct({
-   label: Schema.optionalKey(TrimmedNonEmptyString),
-   deviceType: Schema.optionalKey(AuthClientMetadataDeviceType),
+@@ -171,6 +171,10 @@ export const AuthClientPresentationMetadata = Schema.Struct({
    os: Schema.optionalKey(TrimmedNonEmptyString),
+   surface: Schema.optionalKey(ClientSurface),
+   appVersion: Schema.optionalKey(TrimmedNonEmptyString),
 +  // Stable per-install identifier. Lets the server collapse repeated
 +  // bootstraps from the same client onto one session instead of accumulating
 +  // a row per launch.
@@ -1326,7 +1549,7 @@ index 70b289975..2c885f22a 100644
  });
  export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetadata.Type;
  
-@@ -181,6 +185,7 @@ export const AuthTokenExchangeRequest = Schema.Struct({
+@@ -183,6 +187,7 @@ export const AuthTokenExchangeRequest = Schema.Struct({
    client_label: Schema.optionalKey(TrimmedNonEmptyString),
    client_device_type: Schema.optionalKey(AuthClientMetadataDeviceType),
    client_os: Schema.optionalKey(TrimmedNonEmptyString),
@@ -1334,10 +1557,11 @@ index 70b289975..2c885f22a 100644
  }).pipe(HttpApiSchema.asFormUrlEncoded());
  export type AuthTokenExchangeRequest = typeof AuthTokenExchangeRequest.Type;
  
-@@ -225,6 +230,7 @@ export const AuthClientMetadata = Schema.Struct({
+@@ -227,6 +232,7 @@ export const AuthClientMetadata = Schema.Struct({
    deviceType: AuthClientMetadataDeviceType,
    os: Schema.optionalKey(TrimmedNonEmptyString),
    browser: Schema.optionalKey(TrimmedNonEmptyString),
 +  instanceId: Schema.optionalKey(TrimmedNonEmptyString),
  });
  export type AuthClientMetadata = typeof AuthClientMetadata.Type;
+ 

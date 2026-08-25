@@ -29,21 +29,18 @@ index 8f7e42c11..46607da71 100644
          context,
          {
 diff --git a/apps/server/src/provider/Layers/OpenCodeProvider.ts b/apps/server/src/provider/Layers/OpenCodeProvider.ts
-index 62f29c47e..947782883 100644
+index 62f29c47e..824d94cd8 100644
 --- a/apps/server/src/provider/Layers/OpenCodeProvider.ts
 +++ b/apps/server/src/provider/Layers/OpenCodeProvider.ts
-@@ -11,6 +11,10 @@ import * as Effect from "effect/Effect";
+@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
  
  import { createModelCapabilities } from "@t3tools/shared/model";
  import { compareSemverVersions } from "@t3tools/shared/semver";
-+import {
-+  sanitizeTerminalValue,
-+  stripTerminalEscapes,
-+} from "@t3tools/shared/stripTerminalEscapes";
++import { sanitizeTerminalValue, stripTerminalEscapes } from "@t3tools/shared/stripTerminalEscapes";
  import {
    buildServerProvider,
    nonEmptyTrimmed,
-@@ -174,14 +178,18 @@ function openCodeCapabilitiesForModel(input: {
+@@ -174,14 +175,18 @@ function openCodeCapabilitiesForModel(input: {
    readonly model: ProviderListResponse["all"][number]["models"][string];
    readonly agents: ReadonlyArray<Agent>;
  }): ModelCapabilities {
@@ -64,7 +61,7 @@ index 62f29c47e..947782883 100644
      (agent) => !agent.hidden && (agent.mode === "primary" || agent.mode === "all"),
    );
    const defaultAgent = inferDefaultAgent(primaryAgents);
-@@ -390,7 +398,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
+@@ -390,7 +395,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
      if (versionExit._tag === "Failure") {
        return fallback(Cause.squash(versionExit.cause));
      }
@@ -74,7 +71,7 @@ index 62f29c47e..947782883 100644
      if (!version) {
        return fallback(
 diff --git a/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts b/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts
-index 8d5ba3533..970a627c4 100644
+index f02bf997c..d2c03a88b 100644
 --- a/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts
 +++ b/apps/server/src/provider/opencodeRuntime.cliParsers.test.ts
 @@ -154,6 +154,30 @@ describe("parseModelsCliOutput", () => {
@@ -108,7 +105,7 @@ index 8d5ba3533..970a627c4 100644
  });
  
  describe("parseAgentListCliOutput", () => {
-@@ -255,9 +279,47 @@ describe("parseAgentListCliOutput", () => {
+@@ -255,9 +279,49 @@ describe("parseAgentListCliOutput", () => {
      NodeAssert.equal(result[0]!.hidden, true);
      NodeAssert.equal(result[1]!.hidden, false);
    });
@@ -147,17 +144,19 @@ index 8d5ba3533..970a627c4 100644
  
  describe("parseSkillsCliOutput", () => {
 +  it("strips OSC escapes before JSON parsing (opencode CLI leak)", () => {
-+    const polluted = "\x1b]0;tmp: ready\x07" + JSON.stringify([{ name: "review-pr", location: "/tmp/x", description: "d", content: "c" }]);
++    const polluted =
++      "\x1b]0;tmp: ready\x07" +
++      JSON.stringify([{ name: "review-pr", location: "/tmp/x", description: "d", content: "c" }]);
 +    const result = parseSkillsCliOutput(polluted);
 +    NodeAssert.equal(result.length, 1);
 +    NodeAssert.equal(result[0]!.name, "review-pr");
 +  });
 +
-   it("parses skill metadata from the CLI JSON output", () => {
+   it("parses only skill metadata from the CLI JSON output", () => {
      const result = parseSkillsCliOutput(
        JSON.stringify([
 diff --git a/apps/server/src/provider/opencodeRuntime.ts b/apps/server/src/provider/opencodeRuntime.ts
-index 2ff4fa129..2aba395ee 100644
+index 80329a679..e91bbee99 100644
 --- a/apps/server/src/provider/opencodeRuntime.ts
 +++ b/apps/server/src/provider/opencodeRuntime.ts
 @@ -34,6 +34,7 @@ import { collectStreamAsString } from "./providerSnapshot.ts";
@@ -237,7 +236,7 @@ index a797e97b6..e7a8c0e2c 100644
    },
    "scripts": {
 diff --git a/packages/shared/src/model.ts b/packages/shared/src/model.ts
-index bdc0c0cc8..bfca0a092 100644
+index bdc0c0cc8..cd19741e4 100644
 --- a/packages/shared/src/model.ts
 +++ b/packages/shared/src/model.ts
 @@ -10,6 +10,8 @@ import {
@@ -279,12 +278,35 @@ index bdc0c0cc8..bfca0a092 100644
    return trimmed || null;
  }
  
+@@ -323,10 +328,20 @@ export function createModelSelection(
+   model: string,
+   options?: ReadonlyArray<ProviderOptionSelection> | null,
+ ): ModelSelection {
+-  const selections = options ? cloneSelections(options) : [];
++  const sanitizedModel = sanitizeTerminalValue(model);
++  const rawSelections = options ? cloneSelections(options) : [];
++  const selections = rawSelections
++    .map((selection) => {
++      if (typeof selection.value === "string") {
++        const sanitized = sanitizeTerminalValue(selection.value);
++        return sanitized.length > 0 ? { ...selection, value: sanitized } : null;
++      }
++      return selection;
++    })
++    .filter((selection): selection is ProviderOptionSelection => selection !== null);
+   const base: ModelSelection = {
+     instanceId,
+-    model,
++    model: sanitizedModel,
+   };
+   return selections.length > 0 ? { ...base, options: selections } : base;
+ }
 diff --git a/packages/shared/src/stripTerminalEscapes.ts b/packages/shared/src/stripTerminalEscapes.ts
 new file mode 100644
-index 000000000..0c00ccc55
+index 000000000..0382a511b
 --- /dev/null
 +++ b/packages/shared/src/stripTerminalEscapes.ts
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,45 @@
 +/**
 + * Strip terminal escape sequences from captured CLI stdout.
 + *
@@ -304,6 +326,10 @@ index 000000000..0c00ccc55
 +const CSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 +const CHARSET_RE = /\x1b[()][A-Za-z0-9]/g;
 +const SINGLE_ESC_RE = /\x1b[@-Z\\-_]/g;
++// Trailing incomplete sequences (e.g. truncated "\x1b[34" without terminator) — strip to end of string.
++const TRAILING_CSI_RE = /\x1b\[[0-9;?]*[ -/]*$/g;
++const TRAILING_OSC_RE = /\x1b\].*$/g;
++const TRAILING_ESC_RE = /\x1b$/g;
 +
 +export function stripTerminalEscapes(input: string): string {
 +  if (!input || input.indexOf("\x1b") === -1) {
@@ -313,6 +339,9 @@ index 000000000..0c00ccc55
 +    .replace(OSC_RE, "")
 +    .replace(CSI_RE, "")
 +    .replace(CHARSET_RE, "")
++    .replace(TRAILING_CSI_RE, "")
++    .replace(TRAILING_OSC_RE, "")
++    .replace(TRAILING_ESC_RE, "")
 +    .replace(SINGLE_ESC_RE, "");
 +}
 +

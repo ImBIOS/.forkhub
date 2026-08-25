@@ -4,7 +4,7 @@
   "upstream_remote": "upstream",
   "fork_url": "https://github.com/ImBIOS/t3code.git",
   "fork_remote": "origin",
-  "last_known_upstream_sha": "45a2c4b",
-  "last_synced_at": "2026-08-21T04:39:50.530Z",
+  "last_known_upstream_sha": "9996038",
+  "last_synced_at": "2026-08-25T01:25:00.000Z",
   "schedule": "on-upstream-release"
 }

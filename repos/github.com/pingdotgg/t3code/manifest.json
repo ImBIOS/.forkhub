@@ -14,7 +14,7 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-t3code-strip-osc-ansi-escapes-from-opencode-cl",
-      "last_realized_against_commit": "20d9102",
+      "last_realized_against_commit": "9996038",
       "applied_upstream_pr": {
         "number": 7755,
         "url": "https://github.com/pingdotgg/t3code/pull/7755",
@@ -28,7 +28,7 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-auth-stop-accumulating-authorized-client-sessi",
-      "last_realized_against_commit": "20d9102",
+      "last_realized_against_commit": "9996038",
       "applied_upstream_pr": {
         "number": 7978,
         "url": "https://github.com/pingdotgg/t3code/pull/7978",
@@ -43,7 +43,7 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-chat-show-revert-after-network-error",
-      "last_realized_against_commit": "20d9102",
+      "last_realized_against_commit": "9996038",
       "applied_upstream_pr": {
         "number": 7983,
         "url": "https://github.com/pingdotgg/t3code/pull/7983",
@@ -58,7 +58,7 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "feat/scheduled-tasks-upstream",
-      "last_realized_against_commit": "20d9102",
+      "last_realized_against_commit": "9996038",
       "applied_upstream_pr": {
         "number": 7986,
         "url": "https://github.com/pingdotgg/t3code/pull/7986",
@@ -73,7 +73,7 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-sanitize-model-selections-on-creation-to-preve",
-      "last_realized_against_commit": "20d9102"
+      "last_realized_against_commit": "9996038"
     },
     "fix-sanitize-model-selections-on-creation-to-preve-gyydstcz": {
       "status": "applied",
@@ -81,7 +81,7 @@
       "author": "Imamuzzaki Abu Salam",
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-sanitize-model-selections-on-creation-to-preve",
-      "last_realized_against_commit": "20d9102"
+      "last_realized_against_commit": "9996038"
     }
   },
   "apply_order": [

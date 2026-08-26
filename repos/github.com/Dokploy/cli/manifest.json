@@ -1,0 +1,24 @@
+{
+  "target_repo": "github.com/Dokploy/cli",
+  "upstream_main_branch": "main",
+  "upstream_remote": "upstream",
+  "fork_remote": "origin",
+  "is_fork": true,
+  "schedule": "on-upstream-release",
+  "token_budget_per_run": 100000,
+  "on_budget_exceed": "pause",
+  "patches": {
+    "feat-support-multiple-api-keys-profiles-for-managi-2cvkt133": {
+      "status": "applied",
+      "version": 1,
+      "author": "Imamuzzaki Abu Salam",
+      "last_modified_by": "Imamuzzaki Abu Salam",
+      "branch": "feat-support-multiple-api-keys-profiles-for-managi",
+      "last_realized_against_commit": "4f8b1e5"
+    }
+  },
+  "apply_order": [
+    "feat-support-multiple-api-keys-profiles-for-managi-2cvkt133"
+  ],
+  "slug_aliases": {}
+}

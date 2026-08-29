@@ -82,6 +82,21 @@
       "last_modified_by": "Imamuzzaki Abu Salam",
       "branch": "fix-sanitize-model-selections-on-creation-to-preve",
       "last_realized_against_commit": "9996038"
+    },
+    "fix-remote-stop-no-feedback-stuck-thinking-7h3k9p2m": {
+      "status": "applied",
+      "version": 1,
+      "author": "Imamuzzaki Abu Salam",
+      "last_modified_by": "Imamuzzaki Abu Salam",
+      "branch": "fix-remote-stop-no-feedback-stuck-thinking",
+      "last_realized_against_commit": "6a9d9f9",
+      "applied_upstream_pr": {
+        "number": 8619,
+        "url": "https://github.com/pingdotgg/t3code/pull/8619",
+        "issue": "https://github.com/pingdotgg/t3code/issues/8618",
+        "issue_number": 8618,
+        "state": "open"
+      }
     }
   },
   "apply_order": [
@@ -90,7 +105,8 @@
     "fix-chat-show-revert-after-network-error-vq3yckjy",
     "feat-t3code-server-side-scheduled-tasks-start-agen-vf7mpa71",
     "fix-sanitize-model-selections-on-creation-to-preve-g6p0mcp9",
-    "fix-sanitize-model-selections-on-creation-to-preve-gyydstcz"
+    "fix-sanitize-model-selections-on-creation-to-preve-gyydstcz",
+    "fix-remote-stop-no-feedback-stuck-thinking-7h3k9p2m"
   ],
   "slug_aliases": {}
 }

@@ -101,12 +101,16 @@ jobs:
           for id in $(jq -r '.apply_order[]' "$FH/repos/${{ matrix.target }}/manifest.json"); do
             p="$FH/repos/${{ matrix.target }}/patches/$id"
             echo "→ $id"
-            if [ ! -s "$p/reference.diff" ]; then
-              echo "::warning::$id has an empty reference.diff — skipping (needs re-capture via fh satisfied or re-derivation)"
+            # Heal colored diffs captured with color.diff=always (CLI now
+            # captures --no-color, but old intents may carry ANSI escapes).
+            CLEAN="$(mktemp)"
+            sed -e 's/\x1b\[[0-9;]*m//g' "$p/reference.diff" > "$CLEAN"
+            if ! grep -qE '^(diff --git |--- )' "$CLEAN"; then
+              echo "::warning::$id reference.diff has no usable hunks — skipping (re-capture or re-derive)"
               continue
             fi
-            git -C "$BD" apply --check "$p/reference.diff"
-            git -C "$BD" apply "$p/reference.diff"
+            git -C "$BD" apply --check "$CLEAN"
+            git -C "$BD" apply "$CLEAN"
             # -f (not -x): verify.sh files are checked in non-executable.
             if [ -f "$p/verify.sh" ]; then
               (cd "$BD" && sh "$p/verify.sh")

@@ -1,1 +1,0 @@
-{"n":1,"phase":"drafting","timestamp":"2026-08-25T00:16:18.200Z","upstream_sha":"7757af5","approach":"fix(opencode): only set tab title when stdout is a TTY to avoid polluting piped output","result":"passed","tokens":0,"model":"manual"}

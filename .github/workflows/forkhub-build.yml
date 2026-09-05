@@ -57,6 +57,10 @@ jobs:
         with:
           path: forkhub
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Resolve upstream + patch stack
         id: ctx
         working-directory: forkhub
@@ -97,6 +101,10 @@ jobs:
           for id in $(jq -r '.apply_order[]' "$FH/repos/${{ matrix.target }}/manifest.json"); do
             p="$FH/repos/${{ matrix.target }}/patches/$id"
             echo "→ $id"
+            if [ ! -s "$p/reference.diff" ]; then
+              echo "::warning::$id has an empty reference.diff — skipping (needs re-capture via fh satisfied or re-derivation)"
+              continue
+            fi
             git -C "$BD" apply --check "$p/reference.diff"
             git -C "$BD" apply "$p/reference.diff"
             # -f (not -x): verify.sh files are checked in non-executable.

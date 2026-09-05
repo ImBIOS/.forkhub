@@ -65,7 +65,7 @@ jobs:
           M="repos/${{ matrix.target }}/manifest.json"
           U="repos/${{ matrix.target }}/upstream.json"
           echo "upstream_url=$(jq -r .upstream_url "$U")" >> "$GITHUB_OUTPUT"
-          echo "upstream_branch=$(jq -r .upstream_main_branch // "main" "$U")" >> "$GITHUB_OUTPUT"
+          echo "upstream_branch=$(jq -r '.upstream_main_branch // "main"' "$U")" >> "$GITHUB_OUTPUT"
           echo "order=$(jq -c .apply_order "$M")" >> "$GITHUB_OUTPUT"
 
       - name: "Clone upstream at latest tag (fallback: main branch)"
@@ -73,7 +73,9 @@ jobs:
           set -euo pipefail
           rm -rf build && mkdir -p build
           URL="${{ steps.ctx.outputs.upstream_url }}"
-          # Support only remote URLs here; file:// fixtures are for local tests.
+          # GHA runners have no SSH keys: normalize git@host:owner/repo
+          # to https for public clones.
+          URL=$(printf '%s' "$URL" | sed -e 's|^git@\([^:]*\):|https://\1/|')
           TAG=$(git ls-remote --tags --sort=-v:refname "$URL" \
             | grep -o 'refs/tags/v[^^{}]*' | head -1 | cut -d/ -f3 || true)
           if [ -n "$TAG" ]; then
@@ -86,34 +88,40 @@ jobs:
           echo "UPSTREAM_TAG=$(cat upstream_tag.txt)" >> "$GITHUB_ENV"
 
       - name: Apply intent stack in manifest order + verify gate
-        working-directory: forkhub
         run: |
           set -euo pipefail
-          for id in $(jq -r '.apply_order[]' "repos/${{ matrix.target }}/manifest.json"); do
-            p="repos/${{ matrix.target }}/patches/$id"
+          # Absolute paths: git -C changes directory, so relative patch
+          # paths would resolve inside the build checkout (bug).
+          FH="$GITHUB_WORKSPACE/forkhub"
+          BD="$GITHUB_WORKSPACE/build"
+          for id in $(jq -r '.apply_order[]' "$FH/repos/${{ matrix.target }}/manifest.json"); do
+            p="$FH/repos/${{ matrix.target }}/patches/$id"
             echo "→ $id"
-            git -C ../build apply --check "$p/reference.diff"
-            git -C ../build apply "$p/reference.diff"
-            if [ -x "$p/verify.sh" ]; then
-              (cd ../build && sh "../forkhub/$p/verify.sh")
+            git -C "$BD" apply --check "$p/reference.diff"
+            git -C "$BD" apply "$p/reference.diff"
+            # -f (not -x): verify.sh files are checked in non-executable.
+            if [ -f "$p/verify.sh" ]; then
+              (cd "$BD" && sh "$p/verify.sh")
             fi
           done
 
       - name: Repo-native build (or source tarball fallback)
         run: |
           set -euo pipefail
-          mkdir -p dist
-          if [ -x "forkhub/repos/${{ matrix.target }}/build/build.sh" ]; then
-            (cd build && sh "../forkhub/repos/${{ matrix.target }}/build/build.sh")
+          FH="$GITHUB_WORKSPACE/forkhub"
+          BD="$GITHUB_WORKSPACE/build"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          if [ -f "$FH/repos/${{ matrix.target }}/build/build.sh" ]; then
+            (cd "$BD" && sh "$FH/repos/${{ matrix.target }}/build/build.sh")
           fi
-          if [ -z "$(ls -A dist)" ]; then
+          if [ -z "$(ls -A "$GITHUB_WORKSPACE/dist")" ]; then
             # Default supports ANY repo type: ship the verified patched source.
             # A placeholder build.sh is a deliberate no-op, so fresh scaffolds
             # stay green until the agent fills in the repo-native build.
             SLUG=$(echo "${{ matrix.target }}" | awk -F/ '{print $(NF-1)"-"$NF}' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')
-            tar -czf "dist/$SLUG-patched-source.tar.gz" -C build .
+            tar -czf "$GITHUB_WORKSPACE/dist/$SLUG-patched-source.tar.gz" -C "$BD" .
           fi
-          (cd dist && sha256sum * > SHA256SUMS || shasum -a 256 * > SHA256SUMS)
+          (cd "$GITHUB_WORKSPACE/dist" && sha256sum * > SHA256SUMS || shasum -a 256 * > SHA256SUMS)
 
       - name: Publish namespaced release
         working-directory: forkhub
@@ -136,4 +144,4 @@ jobs:
               cat "repos/${{ matrix.target }}/build/CONSUME.md"
             fi
           } > "$NOTES"
-          gh release create "$TAG" ../dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file "$NOTES"
+          gh release create "$TAG" $GITHUB_WORKSPACE/dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file "$NOTES"

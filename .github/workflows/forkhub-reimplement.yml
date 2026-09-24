@@ -1,0 +1,227 @@
+name: forkhub reimplement
+
+# Unattended intent re-derivation with OpenCode. Dispatched manually when a
+# patch drifts (the build job's apply step fails) or needs a fresh
+# realization. The agent MUST end in one of two states (see PROMPT below):
+# REALIZATION/realization.diff (+ green verify.sh) or NEEDS_HUMAN.md.
+# The target-owned build/reimplement-router.sh routes the outcome:
+#   PROMOTE → refresh artifacts, bump version, commit (main, or a PR when
+#             REIMPL_AUTOPROMOTE=false) — the build workflow takes it over.
+#   HUMAN/FAIL → open/update a `needs-human-decision` issue, no commit.
+# Ephemeral runner + single attempt + wall timeout are the cost controls.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target, e.g. github.com/pingdotgg/t3code (empty = all)"
+        required: false
+        default: ""
+      patch:
+        description: "Single patch-id (empty = every patch in apply_order)"
+        required: false
+        default: ""
+      tag:
+        description: "Upstream tag to realize against (empty = newest per upstream.json)"
+        required: false
+        default: ""
+      model:
+        description: "opencode -m provider/model"
+        required: false
+        default: "opencode-go/muse-spark-1.3-contributor"
+      variant:
+        description: "opencode --variant (provider effort level)"
+        required: false
+        default: "xhigh"
+      timeout-minutes:
+        description: "Wall budget for the agent run"
+        required: false
+        default: "30"
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: forkhub-reimplement
+  cancel-in-progress: false
+
+jobs:
+  reimplement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: forkhub
+
+      - name: Install opencode
+        run: |
+          set -euo pipefail
+          npm install -g opencode-ai
+          opencode --version
+
+      - name: Probe model auth (fail fast on config errors)
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENCODE_API_KEY:-}" ]; then
+            echo "::error::OPENCODE_API_KEY secret is not set. Add it in repo Settings → Secrets."
+            exit 1
+          fi
+          opencode models "${{ inputs.model }}" | grep -qi "$(printf '%s' "${{ inputs.model }}" | cut -d/ -f2-)" \
+            || { echo "::error::model '${{ inputs.model }}' not visible to this key."; exit 1; }
+
+      - name: Re-derive patches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          set -euo pipefail
+          FH="$GITHUB_WORKSPACE/forkhub"
+          MODEL="${{ inputs.model }}"
+          VARIANT="${{ inputs.variant }}"
+          TIMEOUT_M="${{ inputs.timeout-minutes }}"
+          AUTOPROMOTE="${{ vars.REIMPL_AUTOPROMOTE }}"
+          [ -n "$AUTOPROMOTE" ] || AUTOPROMOTE="true"
+
+          TARGETS=$(for m in "$FH"/repos/*/*/*/manifest.json; do
+            [ -f "$m" ] || continue
+            t=$(dirname "$m" | sed 's|^.*/repos/||')
+            if [ -n "${{ inputs.target }}" ] && [ "$t" != "${{ inputs.target }}" ]; then continue; fi
+            printf '%s\n' "$t"
+          done)
+          [ -n "$TARGETS" ] || { echo "no matching targets"; exit 1; }
+
+          for TARGET in $TARGETS; do
+            TDIR="$FH/repos/$TARGET"
+            UJSON="$TDIR/upstream.json"
+            UPSTREAM_URL=$(jq -r .upstream_url "$UJSON")
+            UPSTREAM_URL=$(printf '%s' "$UPSTREAM_URL" | sed -e 's|^git@\([^:]*\):|https://\1/|')
+            if [ -n "${{ inputs.tag }}" ]; then
+              TAG="${{ inputs.tag }}"
+            else
+              MATCH=$(jq -r '.tag_match_pattern // empty' "$UJSON")
+              IGNORE=$(jq -r '.tag_ignore_pattern // empty' "$UJSON")
+              TAGS=$(git ls-remote --tags --sort=-v:refname "$UPSTREAM_URL" \
+                | grep -o 'refs/tags/v[^^{}]*' | cut -d/ -f3 || true)
+              [ -z "$MATCH" ] || TAGS=$(printf '%s\n' "$TAGS" | grep -E -- "$MATCH" || true)
+              [ -z "$IGNORE" ] || TAGS=$(printf '%s\n' "$TAGS" | grep -v -E -- "$IGNORE" || true)
+              TAG=$(printf '%s\n' "$TAGS" | head -1 || true)
+            fi
+            [ -n "$TAG" ] || { echo "no tag for $TARGET; skipping"; continue; }
+
+            IDS="${{ inputs.patch }}"
+            [ -n "$IDS" ] || IDS=$(jq -r '.apply_order[]' "$TDIR/manifest.json")
+            for ID in $IDS; do
+              PDIR="$TDIR/patches/$ID"
+              [ -d "$PDIR" ] || { echo "unknown patch $ID; skipping"; continue; }
+              echo "===== $TARGET $ID @ $TAG ====="
+              WORK="$GITHUB_WORKSPACE/work-$ID"
+              rm -rf "$WORK"
+              git clone --depth 1 --branch "$TAG" "$UPSTREAM_URL" "$WORK"
+
+              # Drift pre-check: nothing changed in target_area → current, no tokens spent.
+              BASE=$(jq -r --arg id "$ID" '.patches[$id].last_realized_against_commit // empty' "$TDIR/manifest.json")
+              AREA=$(sed -n 's/^target_area: *\[\(.*\)\]/\1/p' "$PDIR/INTENT.md" | tr ',' '\n' | tr -d ' []' | grep -v '^$' || true)
+              if [ -n "$BASE" ] && [ -n "$AREA" ]; then
+                if git -C "$WORK" fetch --depth 1 origin "$BASE" 2>/dev/null; then
+                  # shellcheck disable=SC2086
+                  if [ -z "$(git -C "$WORK" diff --name-only "$BASE" "$TAG" -- $AREA 2>/dev/null)" ]; then
+                    echo "$ID: target_area untouched since $BASE — current, skipping agent run"
+                    continue
+                  fi
+                  git -C "$WORK" diff "$BASE" "$TAG" -- $AREA > "$WORK/drift-summary.txt" 2>/dev/null || true
+                  echo "drift detected for $ID (see drift-summary.txt)"
+                fi
+              fi
+
+              # Assemble the context: intent is truth, reference.diff is evidence only.
+              mkdir -p "$WORK/REALIZATION"
+              cp "$PDIR/INTENT.md" "$PDIR/ACCEPTANCE.md" "$WORK/"
+              [ -f "$PDIR/reference.diff" ] && cp "$PDIR/reference.diff" "$WORK/"
+              [ -f "$PDIR/attempts.jsonl" ] && cp "$PDIR/attempts.jsonl" "$WORK/"
+              cat > "$WORK/PROMPT.md" <<EOF
+          You are re-deriving a forkhub intent-patch against a new upstream release.
+
+          Source of truth: INTENT.md (what to implement) and ACCEPTANCE.md (must-pass criteria).
+          reference.diff is the LAST KNOWN-GOOD realization — evidence only. DO NOT apply it
+          mechanically; re-derive the intent against the CURRENT checkout, adapting to renames,
+          refactors, and API changes. drift-summary.txt (if present) shows what upstream changed
+          in the patch's target_area since the last realization.
+
+          Rules:
+          1. Work only inside this checkout. Do not touch anything outside it.
+          2. Implement the intent, then run the patch's verify.sh until it passes.
+          3. NEVER stop to ask questions and NEVER commit or push. Finish by writing exactly one outcome:
+             - SUCCESS: REALIZATION/realization.diff (complete unified diff of your changes, new files
+               included) plus REALIZATION/report.md (what you did, files touched, verify output).
+             - BLOCKED: NEEDS_HUMAN.md with these sections: \#\# Decision needed, \#\# Options
+               (table: option / effort / risk), \#\# Recommendation, \#\# Blocked by,
+               \#\# Cost of waiting. Be specific enough that a human can answer in one reply.
+          EOF
+
+              set +e
+              timeout "${TIMEOUT_M}m" opencode run --dir "$WORK" \
+                -m "$MODEL" --variant "$VARIANT" --auto --format json \
+                "$(cat "$WORK/PROMPT.md")" > "$WORK/opencode.log" 2>&1
+              AGENT_EXIT=$?
+              set -e
+              echo "opencode exit: $AGENT_EXIT (124 = wall timeout)"
+
+              OUTCOME=$(UPSTREAM_TAG="$TAG" PATCH_ID="$ID" AUTHOR="forkhub-reimplement" \
+                sh "$TDIR/build/reimplement-router.sh" "$WORK" "$PDIR")
+              echo "router: $OUTCOME"
+              case "$OUTCOME" in
+                PROMOTE)
+                  if [ "$AUTOPROMOTE" = "true" ]; then
+                    git -C "$FH" add -A
+                    git -C "$FH" -c user.name="forkhub-reimplement" -c user.email="forkhub@imbios.dev" \
+                      commit -m "feat(forkhub): re-derive $ID against $TAG (unattended, verify green)" || true
+                    git -C "$FH" push origin main
+                    echo "promoted to main — build workflow takes it from here"
+                  else
+                    BR="forkhub/reimpl-$ID"
+                    git -C "$FH" checkout -B "$BR"
+                    git -C "$FH" add -A
+                    git -C "$FH" -c user.name="forkhub-reimplement" -c user.email="forkhub@imbios.dev" \
+                      commit -m "feat(forkhub): re-derive $ID against $TAG (needs review)" || true
+                    git -C "$FH" push -u origin "$BR" --force
+                    gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BR" \
+                      --title "Re-derive $ID against $TAG" \
+                      --body "Unattended re-derivation, verify green. Review the refreshed reference.diff, then merge to build." || true
+                    git -C "$FH" checkout main
+                  fi
+                  ;;
+                *)
+                  # HUMAN or FAIL: file a decision issue (dedupe by title), never commit.
+                  TITLE="[reimplement] $TARGET $ID needs a human decision"
+                  BODY=$(mktemp)
+                  {
+                    echo "Unattended re-derivation of \`$ID\` against \`$TAG\` stopped with: **$OUTCOME**."
+                    echo
+                    if [ -f "$WORK/NEEDS_HUMAN.md" ]; then
+                      cat "$WORK/NEEDS_HUMAN.md"
+                    else
+                      echo "No NEEDS_HUMAN.md was written. Last 80 lines of the agent log:"
+                      echo '```'
+                      tail -n 80 "$WORK/opencode.log" 2>/dev/null || true
+                      echo '```'
+                    fi
+                    echo
+                    echo "Rerun: workflow \`forkhub reimplement\`, target \`$TARGET\`, patch \`$ID\`, tag \`$TAG\`."
+                  } > "$BODY"
+                  EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+                  if [ -n "$EXISTING" ]; then
+                    gh issue comment --repo "$GITHUB_REPOSITORY" "$EXISTING" --body-file "$BODY"
+                    echo "updated issue #$EXISTING"
+                  else
+                    gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$BODY" \
+                      --label "needs-human-decision" || \
+                      gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$BODY"
+                    echo "opened decision issue"
+                  fi
+                  ;;
+              esac
+            done
+          done

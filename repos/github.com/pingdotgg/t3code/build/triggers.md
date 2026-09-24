@@ -15,3 +15,7 @@ User-explicit choice (recorded 2026-09-24, ImBIOS; night train confirmed later s
 
 To change the poll cadence, edit the cron in
 `.github/workflows/forkhub-build.yml` (shared file — affects all targets).
+
+Drift (apply step fails on a new tag) does NOT auto-trigger anything:
+dispatch `forkhub reimplement` by hand — see `build/reimplement.md`
+for the unattended OpenCode flow and the human-decision protocol.

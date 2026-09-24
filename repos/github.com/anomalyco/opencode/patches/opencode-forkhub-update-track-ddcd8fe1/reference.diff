@@ -368,10 +368,10 @@ index b7209d8522..c7f775b675 100644
 +  setForkHubOwner?(owner: string): Promise<UpdateTrackInfo>
  }
 diff --git a/packages/desktop/electron-builder.config.ts b/packages/desktop/electron-builder.config.ts
-index 3cb1302ee8..c9537b58d2 100644
+index 3cb1302ee8..edf4c77ba5 100644
 --- a/packages/desktop/electron-builder.config.ts
 +++ b/packages/desktop/electron-builder.config.ts
-@@ -158,6 +158,27 @@ const getBase = (appId: string): Configuration => ({
+@@ -158,6 +158,28 @@ const getBase = (appId: string): Configuration => ({
  })
  
  function getConfig() {
@@ -381,7 +381,8 @@ index 3cb1302ee8..c9537b58d2 100644
 +    const owner = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(process.env.FORKHUB_OWNER ?? "")
 +      ? (process.env.FORKHUB_OWNER as string).toLowerCase()
 +      : "imbios"
-+    const appId = `ai.opencode.desktop.forkhub.${owner}.latest`
++    const forkhubBase = process.env.FORKHUB_BASE === "beta" ? "beta" : "latest"
++    const appId = `ai.opencode.desktop.forkhub.${owner}.${forkhubBase}`
 +    const repoOverride = process.env.OPENCODE_DESKTOP_UPDATE_REPOSITORY
 +    const publishOwner = repoOverride?.includes("/") ? repoOverride.split("/")[0] : owner === "imbios" ? "ImBIOS" : owner
 +    const publishRepo = repoOverride?.includes("/") ? repoOverride.split("/").slice(1).join("/") : ".forkhub"
@@ -400,10 +401,10 @@ index 3cb1302ee8..c9537b58d2 100644
    const base = getBase(appId)
  
 diff --git a/packages/desktop/electron.vite.config.ts b/packages/desktop/electron.vite.config.ts
-index 2db653a6f3..af65005495 100644
+index 2db653a6f3..04ad79ef9b 100644
 --- a/packages/desktop/electron.vite.config.ts
 +++ b/packages/desktop/electron.vite.config.ts
-@@ -10,6 +10,12 @@ const channel = (() => {
+@@ -10,6 +10,13 @@ const channel = (() => {
  
  const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
  
@@ -411,12 +412,13 @@ index 2db653a6f3..af65005495 100644
 +  ? (process.env.FORKHUB_OWNER as string).toLowerCase()
 +  : "imbios"
 +const forkhubBuild = process.env.OPENCODE_FORKHUB_BUILD === "1"
-+const forkhubAppId = `ai.opencode.desktop.forkhub.${forkhubOwner}.latest`
++const forkhubBase = process.env.FORKHUB_BASE === "beta" ? "beta" : "latest"
++const forkhubAppId = `ai.opencode.desktop.forkhub.${forkhubOwner}.${forkhubBase}`
 +
  const appPlugin = (await import("@opencode/app/vite")).default
  const sentry =
    process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
-@@ -59,6 +65,8 @@ export default defineConfig(({ command }) => ({
+@@ -59,6 +66,8 @@ export default defineConfig(({ command }) => ({
      define: {
        // Local renderer/server mode still uses the dev application identity and updater policy.
        "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel === "local" ? "dev" : channel),
@@ -426,7 +428,7 @@ index 2db653a6f3..af65005495 100644
      build: {
        minify: command === "build",
 diff --git a/packages/desktop/src/main/constants.ts b/packages/desktop/src/main/constants.ts
-index bc33c5bb27..1073d7d6b8 100644
+index bc33c5bb27..2bdfd674ee 100644
 --- a/packages/desktop/src/main/constants.ts
 +++ b/packages/desktop/src/main/constants.ts
 @@ -18,5 +18,12 @@ const appIDs: Record<string, string> = {
@@ -440,7 +442,7 @@ index bc33c5bb27..1073d7d6b8 100644
 +export const FORKHUB_APP_ID =
 +  typeof import.meta.env.OPENCODE_FORKHUB_APP_ID === "string" && import.meta.env.OPENCODE_FORKHUB_APP_ID.length > 0
 +    ? import.meta.env.OPENCODE_FORKHUB_APP_ID
-+    : "ai.opencode.desktop.forkhub.imbios.latest"
++    : "ai.opencode.desktop.forkhub.imbios.beta"
 +
 +export const APP_NAME = FORKHUB_BUILD ? "OpenCode x ForkHub" : app.isPackaged ? appNames[CHANNEL] : "OpenCode Dev"
 +export const APP_ID = FORKHUB_BUILD ? FORKHUB_APP_ID : app.isPackaged ? appIDs[CHANNEL] : "ai.opencode.desktop.dev"

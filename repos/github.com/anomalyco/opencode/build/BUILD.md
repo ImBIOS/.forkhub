@@ -15,9 +15,9 @@ only (see `upstream.json:tag_match_pattern`).
    `OPENCODE_CLI_DIST` — v2 prod desktop builds bundle the locally built
    CLI (`prebuild.ts` refuses prod without it).
 4. Builds the **Linux x64 AppImage, unsigned**, with:
-   - `OPENCODE_CHANNEL=prod` (prod/latest base),
+   - `OPENCODE_CHANNEL=beta` (beta base),
    - `OPENCODE_FORKHUB_BUILD=1` + `FORKHUB_OWNER=imbios` → app id
-     `ai.opencode.desktop.forkhub.imbios.latest`, product name
+     `ai.opencode.desktop.forkhub.imbios.beta`, product name
      "OpenCode x ForkHub" (side-by-side with stock installs),
    - `OPENCODE_DESKTOP_UPDATE_REPOSITORY=$GITHUB_REPOSITORY` → the emitted
      `latest-linux.yml` points electron-updater at this catalog repo.
@@ -52,7 +52,7 @@ polls. The shared workflow step separately publishes the namespaced
 - **`NPM_TOKEN` secret** (optional but wanted): an npm automation token
   with publish rights on `@imbios/with-fh-opencode-ai`. Without it the CLI
   ships only as release-asset tarballs and `npm i -g
-  @imbios/with-fh-opencode-ai@latest` won't resolve until the first
+  @imbios/with-fh-opencode-ai@beta` won't resolve until the first
   token-backed build.
 - **Tag selection.** `upstream.json:tag_match_pattern` keeps the shared
   clone step on the `vX.Y.Z` prod train (upstream also tags `vscode-v*`).

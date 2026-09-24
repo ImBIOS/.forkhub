@@ -35,7 +35,7 @@ case "$TAG" in
   *) fail_soft "UPSTREAM_TAG=$TAG is not a vX.Y.Z release tag; refusing to cut a ForkHub release from it." ;;
 esac
 
-say "# ForkHub build: github.com/anomalyco/opencode @ $TAG (as $VER, prod base)"
+say "# ForkHub build: github.com/anomalyco/opencode @ $TAG (as $VER, beta base)"
 
 command -v bun >/dev/null 2>&1 || fail_soft "bun not on PATH (shared builder guarantees it)"
 say "bun $(bun --version) ok"
@@ -53,15 +53,15 @@ export OPENCODE_CLI_DIST="$PWD/packages/cli/dist"
 
 say "building desktop AppImage (forkhub variant)"
 (cd packages/desktop && \
-  OPENCODE_VERSION="$VER" OPENCODE_CHANNEL=prod OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios \
+  OPENCODE_VERSION="$VER" OPENCODE_CHANNEL=beta OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios FORKHUB_BASE=beta \
   OPENCODE_DESKTOP_UPDATE_REPOSITORY="$REPO" bun ./scripts/prepare.ts >>"$LOG" 2>&1) \
   || fail_soft "desktop prepare failed"
 (cd packages/desktop && \
-  OPENCODE_VERSION="$VER" OPENCODE_CHANNEL=prod OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios \
+  OPENCODE_VERSION="$VER" OPENCODE_CHANNEL=beta OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios FORKHUB_BASE=beta \
   NODE_OPTIONS=--max-old-space-size=4096 bun run build >>"$LOG" 2>&1) \
   || fail_soft "desktop build failed"
 (cd packages/desktop && \
-  OPENCODE_CHANNEL=prod OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios \
+  OPENCODE_CHANNEL=beta OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios FORKHUB_BASE=beta \
   OPENCODE_DESKTOP_UPDATE_REPOSITORY="$REPO" \
   npx electron-builder --linux AppImage --publish never --config electron-builder.config.ts >>"$LOG" 2>&1) \
   || fail_soft "electron-builder packaging failed"
@@ -88,9 +88,9 @@ delete pkg.private;
 fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
 ") >>"$LOG" 2>&1 || say "cli package rename failed; continuing"
   if [ -n "${NPM_TOKEN:-}" ]; then
-    say "publishing @imbios/with-fh-opencode-ai@latest to npm"
+    say "publishing @imbios/with-fh-opencode-ai@beta to npm"
     (cd "$DIST/forkhub/cli-pkg" && \
-      NPM_CONFIG_PROVENANCE=false npm publish --tag latest >>"$LOG" 2>&1) \
+      NPM_CONFIG_PROVENANCE=false npm publish --tag beta >>"$LOG" 2>&1) \
       && say "npm publish ok" \
       || say "npm publish failed; staging tarball instead"
   else

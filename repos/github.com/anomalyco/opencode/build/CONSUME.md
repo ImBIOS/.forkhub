@@ -1,17 +1,17 @@
 ## OpenCode x ForkHub — use this build
 
 Patched OpenCode that updates from a ForkHub channel instead of upstream.
-Base is the **Latest/Prod** release train.
+Base is the **Beta** release train.
 
 1. **Desktop**: install the `opencode-desktop-*-x86_64.AppImage` below
    (Linux; macOS/Windows build locally — see `build/BUILD.md`). It installs
    side-by-side with stock OpenCode as **OpenCode x ForkHub**
-   (`ai.opencode.desktop.forkhub.imbios.latest`).
+   (`ai.opencode.desktop.forkhub.imbios.beta`).
 2. Open **Settings → General → Updates → Update track**, pick **ForkHub**.
 3. Type the channel owner's profile/org name (e.g. `ImBIOS`), press
    **Check**. A valid channel shows its latest release tag.
 4. The titlebar reads **x ForkHub** while the track is active.
-5. **CLI**: `npm i -g @imbios/with-fh-opencode-ai@latest` (once the first
+5. **CLI**: `npm i -g @imbios/with-fh-opencode-ai@beta` (once the first
    token-backed build publishes it; until then use the CLI tarballs
    attached to the bundle release).
 

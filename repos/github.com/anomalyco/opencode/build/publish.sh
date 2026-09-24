@@ -39,5 +39,5 @@ if gh release view "v$VER" --repo "$REPO" >/dev/null 2>&1; then
 else
   echo "creating updater release v$VER"
   # shellcheck disable=SC2086
-  gh release create "v$VER" $FILES --repo "$REPO" --title "OpenCode x ForkHub v$VER" --notes "ForkHub (patched) build of upstream anomalyco/opencode v$VER on the prod/latest base. Desktop AppImage + latest-linux.yml form the electron-updater feed; the matching anomalyco-opencode-v$VER-fh* release carries the full bundle notes. CLI: @imbios/with-fh-opencode-ai@latest."
+  gh release create "v$VER" $FILES --repo "$REPO" --title "OpenCode x ForkHub v$VER" --notes "ForkHub (patched) build of upstream anomalyco/opencode v$VER on the beta base. Desktop AppImage + latest-linux.yml form the electron-updater feed; the matching anomalyco-opencode-v$VER-fh* release carries the full bundle notes. CLI: @imbios/with-fh-opencode-ai@beta."
 fi

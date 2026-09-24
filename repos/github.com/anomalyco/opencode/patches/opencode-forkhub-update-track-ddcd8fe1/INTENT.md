@@ -5,7 +5,7 @@ target_repo: github.com/anomalyco/opencode
 target_area: [packages/desktop/src/main/updater/forkhub.ts, packages/desktop/src/main/updater/index.ts, packages/desktop/src/main/updater/live.ts, packages/desktop/src/main/updater/platform.ts, packages/desktop/src/main/updater/index.test.ts, packages/desktop/src/main/ipc-handlers/updater.ts, packages/desktop/src/main/constants.ts, packages/desktop/src/main/env.d.ts, packages/desktop/src/shared/ipc-rpc/updater.ts, packages/desktop/src/renderer/api.ts, packages/desktop/src/renderer/api-types.ts, packages/desktop/src/renderer/platform/updater.ts, packages/desktop/electron-builder.config.ts, packages/desktop/electron.vite.config.ts, packages/app/src/shell/updates/forkhub.ts, packages/app/src/shell/updates/types.ts, packages/app/src/settings/general/general.tsx, packages/app/src/shell/titlebar/titlebar.tsx, packages/app/src/runtime/i18n/en.ts]
 status: applied
 applied_upstream_pr: none
-version: 2
+version: 3
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -27,10 +27,12 @@ profile or org whose `.forkhub` releases form the channel, presses **Check**
 to validate that account, and the app's electron-updater feed is repointed at
 that account's catalog repo at runtime.
 
-This track rides the **Latest/Prod base**: ForkHub publishes release builds
-only, so `allowPrerelease` stays off and the version comparison is 1:1 with
-upstream. Switching tracks at the same version needs one hand-install; later
-ForkHub releases then flow automatically.
+This track rides the **Beta base**: both Desktop and CLI are built with
+`OPENCODE_CHANNEL=beta` from the same upstream `vX.Y.Z` tags (upstream has no
+live beta branch or beta tags — the beta *build channel* is what rides here).
+`allowPrerelease` stays off and the version comparison is 1:1 with upstream.
+Switching tracks at the same version needs one hand-install; later ForkHub
+releases then flow automatically.
 
 ## Why
 
@@ -57,11 +59,11 @@ never mistaken for stock.
    message saying so. Private catalogs are not supported: the check is
    unauthenticated, so only discoverable public releases count.
 4. **Side-by-side installs.** ForkHub builds (`OPENCODE_FORKHUB_BUILD=1`)
-   use app id `ai.opencode.desktop.forkhub.<owner>.latest` (e.g.
-   `ai.opencode.desktop.forkhub.imbios.latest`) and product name
+   use app id `ai.opencode.desktop.forkhub.<owner>.<base>` (e.g.
+   `ai.opencode.desktop.forkhub.imbios.beta` via `FORKHUB_BASE=beta`) and product name
    "OpenCode x ForkHub", and the running app badges "x ForkHub" in the
    titlebar whenever the ForkHub track is active.
-5. **Prod-base only.** The catalog tracks `vX.Y.Z` release tags
+5. **Beta-base only.** Both Desktop and CLI build with `OPENCODE_CHANNEL=beta`. The catalog tracks `vX.Y.Z` release tags
    (`upstream.json:tag_match_pattern`); `vscode-v*` and any prerelease
    trains are ignored. `allowPrerelease` stays false on ForkHub.
 6. **No repo-wide test/typecheck runs.** Verify with the focused suites in
@@ -112,7 +114,7 @@ never mistaken for stock.
   `APP_NAME`/`APP_ID` so the install is side-by-side with stock.
 - CLI (`opencode upgrade`) is intentionally untouched: the ForkHub CLI
   channel is the npm package `@imbios/with-fh-opencode-ai` published with
-  tag `latest` from the same build (see `build/BUILD.md`).
+  tag `beta` from the same build (see `build/BUILD.md`).
 
 ## History
 
@@ -121,3 +123,5 @@ never mistaken for stock.
   the desktop updater to Effect services and moved settings/titlebar).
 - v2 re-derived against `v2.0.16` (`3a103fe`); `reference.diff` applies
   clean to pristine `v2.0.16` (`git apply --check`).
+
+- v3 switches the base to beta (`OPENCODE_CHANNEL=beta`, `FORKHUB_BASE=beta`, npm tag `beta`).

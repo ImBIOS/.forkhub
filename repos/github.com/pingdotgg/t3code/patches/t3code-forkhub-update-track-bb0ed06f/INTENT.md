@@ -70,11 +70,19 @@ patched install is never mistaken for stock.
   renderer also owns `checkForkHubOwner`, which requires public `.forkhub`
   releases with at least one published release.
 - Feed switch is runtime `setFeedURL({provider: "github", owner, repo})`
-  plus `channel: "latest"` (ForkHub publishes release builds); prerelease
-  and downgrade flags stay off. Switching the owner while on the track
-  repoints immediately and drops any staged download from the old feed.
+  plus `channel: "latest"` with prerelease, downgrade, and full-changelog
+  enabled (a ForkHub catalog may follow the nightly train, and prerelease
+  versions need the flags to install). Switching the owner while on the
+  track repoints immediately and drops any staged download from the old feed.
 - `isVersionAllowedOnUpdateChannel` keeps nightly on the nightly train and
-  stable/ForkHub on release builds; release-note grouping uses the same test.
+  stable on release builds; ForkHub allows both stable and nightly-based
+  builds and blocks only preview cuts (which ship without a feed).
+  Release-note grouping uses the same test, and the release-notes popover
+  covers ForkHub like nightly.
+- `build.sh` aliases updater manifests across both channel names
+  (`latest-*.yml` ↔ `nightly-*.yml`, content is channel-agnostic) because
+  the ForkHub track polls `latest` while nightly builds emit `nightly`.
+  ForkHub builds always wear production icons, never upstream nightly's.
 - New `desktop:update-set-forkhub-owner` IPC (channels, method, handler,
   preload, `DesktopBridge.setForkHubOwner`).
 - Settings UI: "ForkHub" select item + owner `Input` with Check button,

@@ -19,13 +19,13 @@ case "$VER" in
     ;;
 esac
 
-if [ -z "$(ls "$DIST"/latest-*.yml 2>/dev/null)" ]; then
-  echo "no latest-*.yml updater manifests in dist; skipping updater publish"
+if [ -z "$(ls "$DIST"/latest-*.yml "$DIST"/nightly-*.yml 2>/dev/null)" ]; then
+  echo "no latest-*/nightly-*.yml updater manifests in dist; skipping updater publish"
   exit 0
 fi
 
 FILES=""
-for f in "$DIST"/*.AppImage "$DIST"/*.yml "$DIST"/*.blockmap; do
+for f in "$DIST"/*.AppImage "$DIST"/latest-*.yml "$DIST"/nightly-*.yml "$DIST"/*.blockmap; do
   [ -e "$f" ] || continue
   FILES="$FILES $f"
 done

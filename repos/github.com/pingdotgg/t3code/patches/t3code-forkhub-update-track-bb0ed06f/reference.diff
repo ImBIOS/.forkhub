@@ -290,7 +290,7 @@ index cef90b2987..66d6c16024 100644
              hostArch: "arm64",
              appArch: "arm64",
 diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
-index c35b52e834..520e83822d 100644
+index c35b52e834..5a647d318d 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.ts
 @@ -1,5 +1,6 @@
@@ -387,7 +387,7 @@ index c35b52e834..520e83822d 100644
    });
  
    const activeUpdateAction = Ref.get(activeUpdateActionRef);
-@@ -374,8 +401,37 @@ export const make = Effect.gen(function* () {
+@@ -374,8 +401,38 @@ export const make = Effect.gen(function* () {
  
    const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
      channel: DesktopUpdateChannel,
@@ -395,8 +395,9 @@ index c35b52e834..520e83822d 100644
    ) {
      yield* Effect.annotateCurrentSpan({ channel });
 +    if (channel === "forkhub") {
-+      // ForkHub tracks release builds published to another account's
-+      // `.forkhub` repo. The feed repo is dynamic (it follows the stored
++      // ForkHub tracks the builds published to another account's
++      // `.forkhub` repo — stable and/or nightly-based, depending on the
++      // publisher. The feed repo is dynamic (it follows the stored
 +      // owner), so it is pointed at runtime instead of build time.
 +      const feed = forkhub ? resolveForkHubFeedConfig(forkhub) : null;
 +      if (!feed) {
@@ -406,26 +407,26 @@ index c35b52e834..520e83822d 100644
 +        return;
 +      }
 +      yield* electronUpdater.setFeedURL(feed);
-+      // ForkHub publishes release builds, so poll the stable manifests
-+      // in that repo rather than a prerelease channel.
++      // Poll the stable manifests; prereleases stay installable because a
++      // ForkHub catalog may follow the nightly train.
 +      yield* electronUpdater.setChannel("latest");
-+      yield* electronUpdater.setAllowPrerelease(false);
-+      yield* electronUpdater.setAllowDowngrade(false);
-+      yield* electronUpdater.setFullChangelog(false);
++      yield* electronUpdater.setAllowPrerelease(true);
++      yield* electronUpdater.setAllowDowngrade(true);
++      yield* electronUpdater.setFullChangelog(true);
 +      yield* logUpdaterInfo("using update channel", {
 +        channel,
 +        forkhubOwner: feed.owner,
 +        forkhubRepo: feed.repo,
-+        allowPrerelease: false,
-+        allowDowngrade: false,
-+        fullChangelog: false,
++        allowPrerelease: true,
++        allowDowngrade: true,
++        fullChangelog: true,
 +      });
 +      return;
 +    }
      const allowsPrerelease = channel === "nightly";
      yield* electronUpdater.setChannel(channel);
      yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
-@@ -696,7 +752,7 @@ export const make = Effect.gen(function* () {
+@@ -696,7 +753,7 @@ export const make = Effect.gen(function* () {
        Effect.flatMap(
          Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
            const state = yield* Ref.get(updateStateRef);
@@ -434,7 +435,7 @@ index c35b52e834..520e83822d 100644
              yield* logUpdaterInfo("ignoring update that does not match selected channel", {
                version: info.version,
                channel: state.channel,
-@@ -879,7 +935,12 @@ export const make = Effect.gen(function* () {
+@@ -879,7 +936,12 @@ export const make = Effect.gen(function* () {
  
        const settings = yield* desktopSettings.get;
        const enabled = yield* shouldEnableAutoUpdates;
@@ -448,7 +449,7 @@ index c35b52e834..520e83822d 100644
        if (!enabled) {
          return;
        }
-@@ -887,7 +948,10 @@ export const make = Effect.gen(function* () {
+@@ -887,7 +949,10 @@ export const make = Effect.gen(function* () {
  
        yield* electronUpdater.setAutoDownload(false);
        yield* electronUpdater.setAutoInstallOnAppQuit(false);
@@ -460,7 +461,7 @@ index c35b52e834..520e83822d 100644
        yield* electronUpdater.setDisableDifferentialDownload(
          isArm64HostRunningIntelBuild(environment.runtimeInfo),
        );
-@@ -940,6 +1004,22 @@ export const make = Effect.gen(function* () {
+@@ -940,6 +1005,22 @@ export const make = Effect.gen(function* () {
          if (nextChannel === state.channel) {
            return state;
          }
@@ -483,7 +484,7 @@ index c35b52e834..520e83822d 100644
  
          yield* desktopSettings
            .setUpdateChannel(nextChannel)
-@@ -949,14 +1029,23 @@ export const make = Effect.gen(function* () {
+@@ -949,14 +1030,23 @@ export const make = Effect.gen(function* () {
              ),
            );
  
@@ -509,7 +510,7 @@ index c35b52e834..520e83822d 100644
          const allowDowngrade = yield* electronUpdater.allowDowngrade;
          yield* electronUpdater.setAllowDowngrade(true);
          yield* checkForUpdates("channel-change", "held").pipe(
-@@ -965,6 +1054,51 @@ export const make = Effect.gen(function* () {
+@@ -965,6 +1055,51 @@ export const make = Effect.gen(function* () {
          return yield* Ref.get(updateStateRef);
        }).pipe(Effect.ensuring(finishUpdateAction("channel")));
      }),
@@ -561,6 +562,34 @@ index c35b52e834..520e83822d 100644
      check: Effect.fn("desktop.updates.check")(function* (reason: string) {
        yield* Effect.annotateCurrentSpan({ reason });
        if (!(yield* Ref.get(updaterConfiguredRef))) {
+diff --git a/apps/desktop/src/updates/releaseNotes.test.ts b/apps/desktop/src/updates/releaseNotes.test.ts
+index 57d185c097..8385c8206d 100644
+--- a/apps/desktop/src/updates/releaseNotes.test.ts
++++ b/apps/desktop/src/updates/releaseNotes.test.ts
+@@ -123,6 +123,23 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
+     expect(result.omittedReleaseCount).toBe(0);
+   });
+ 
++  it("keeps stable and nightly releases on the ForkHub channel", () => {
++    const result = normalizeDesktopUpdateReleaseNotes(
++      [
++        { version: "0.0.41-preview.20260914.1683", note: "- Maintainer test build" },
++        { version: "0.0.41-nightly.20260914.1707", note: "- Nightly change" },
++        { version: "0.0.42", note: "- Stable change" },
++      ],
++      "0.0.41-nightly.20260914.1707",
++      "forkhub",
++    );
++
++    expect(result.releaseNotes.map(({ version }) => version)).toEqual([
++      "0.0.41-nightly.20260914.1707",
++      "0.0.42",
++    ]);
++  });
++
+   it("keeps only stable releases on the latest channel", () => {
+     const result = normalizeDesktopUpdateReleaseNotes(
+       [
 diff --git a/apps/desktop/src/updates/releaseNotes.ts b/apps/desktop/src/updates/releaseNotes.ts
 index 3cab5f15e4..9de36c9978 100644
 --- a/apps/desktop/src/updates/releaseNotes.ts
@@ -596,7 +625,7 @@ index 7fd50a82f4..79842e97f1 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
-index acf4155fab..9f76615193 100644
+index acf4155fab..b402a18839 100644
 --- a/apps/desktop/src/updates/updateChannels.test.ts
 +++ b/apps/desktop/src/updates/updateChannels.test.ts
 @@ -1,6 +1,12 @@
@@ -613,7 +642,7 @@ index acf4155fab..9f76615193 100644
  
  describe("updateChannels", () => {
    it("keeps preview builds branded as nightly but on the latest update channel", () => {
-@@ -13,4 +19,31 @@ describe("updateChannels", () => {
+@@ -13,4 +19,34 @@ describe("updateChannels", () => {
      expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
      expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
    });
@@ -639,23 +668,29 @@ index acf4155fab..9f76615193 100644
 +    expect(isVersionAllowedOnUpdateChannel("1.2.3", "latest")).toBe(true);
 +    expect(isVersionAllowedOnUpdateChannel("1.2.3", "forkhub")).toBe(true);
 +    expect(isVersionAllowedOnUpdateChannel("1.2.3-nightly.20260911.1", "latest")).toBe(false);
-+    expect(isVersionAllowedOnUpdateChannel("1.2.3-nightly.20260911.1", "forkhub")).toBe(false);
++    // A ForkHub catalog may follow the nightly train: nightly-based builds
++    // install on ForkHub, preview cuts never do (they ship without a feed).
++    expect(isVersionAllowedOnUpdateChannel("1.2.3-nightly.20260911.1", "forkhub")).toBe(true);
++    expect(isVersionAllowedOnUpdateChannel("0.0.41-preview.20260911.7", "forkhub")).toBe(false);
 +    expect(isVersionAllowedOnUpdateChannel("1.2.3-nightly.20260911.1", "nightly")).toBe(true);
 +    expect(isVersionAllowedOnUpdateChannel("1.2.3", "nightly")).toBe(false);
 +    expect(isVersionAllowedOnUpdateChannel("0.0.41-preview.20260911.7", "nightly")).toBe(false);
 +  });
  });
 diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
-index e7f9a2f854..fb1aec295a 100644
+index e7f9a2f854..dfbc21b816 100644
 --- a/apps/desktop/src/updates/updateChannels.ts
 +++ b/apps/desktop/src/updates/updateChannels.ts
-@@ -1,4 +1,4 @@
+@@ -1,6 +1,7 @@
 -import type { DesktopUpdateChannel } from "@t3tools/contracts";
 +import type { DesktopForkHubRepo, DesktopUpdateChannel } from "@t3tools/contracts";
  
  const NIGHTLY_VERSION_PATTERN = /^[^-+]+-nightly\.\d{8}\.\d+$/;
++const PREVIEW_VERSION_PATTERN = /^[^-+]+-preview\.\d{8}\.\d+$/;
  // Preview builds are the maintainers' test train, cut by hand from unreleased
-@@ -16,3 +16,45 @@ export function isNightlyDesktopVersion(version: string): boolean {
+ // branches to exercise the release flow. They share nightly's branding but
+ // are packaged without an update feed (see
+@@ -16,3 +17,47 @@ export function isNightlyDesktopVersion(version: string): boolean {
  export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
    return NIGHTLY_VERSION_PATTERN.test(appVersion) ? "nightly" : "latest";
  }
@@ -689,8 +724,10 @@ index e7f9a2f854..fb1aec295a 100644
 +/**
 + * Whether an updater-advertised version may be installed on a channel.
 + * Mirrors the feed each track polls: nightly follows the nightly train
-+ * only (preview cuts ship without a feed), while stable and ForkHub both
-+ * track release builds. Unknown future channels fail closed.
++ * only, stable follows release builds, and ForkHub follows whatever its
++ * publisher's catalog serves (stable and/or nightly-based builds) —
++ * everything except preview cuts, which ship without a feed. Unknown
++ * future channels fail closed.
 + */
 +export function isVersionAllowedOnUpdateChannel(
 +  version: string,
@@ -698,7 +735,7 @@ index e7f9a2f854..fb1aec295a 100644
 +): boolean {
 +  if (channel === "nightly") return NIGHTLY_VERSION_PATTERN.test(version);
 +  if (channel === "latest") return resolveDefaultDesktopUpdateChannel(version) === "latest";
-+  if (channel === "forkhub") return !NIGHTLY_VERSION_PATTERN.test(version);
++  if (channel === "forkhub") return !PREVIEW_VERSION_PATTERN.test(version);
 +  return false;
 +}
 diff --git a/apps/desktop/src/updates/updateMachine.ts b/apps/desktop/src/updates/updateMachine.ts
@@ -1381,7 +1418,7 @@ index c956ab0a63..799773484a 100644
      </Link>
    );
 diff --git a/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx b/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
-index d3c6f368a5..019346f6fa 100644
+index d3c6f368a5..438e229830 100644
 --- a/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
 +++ b/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
 @@ -11,6 +11,8 @@ const nightlyState: DesktopUpdateState = {
@@ -1393,6 +1430,40 @@ index d3c6f368a5..019346f6fa 100644
    currentVersion: "0.0.35",
    hostArch: "arm64",
    appArch: "arm64",
+@@ -29,6 +31,16 @@ const nightlyState: DesktopUpdateState = {
+ describe("sidebar update release notes popover", () => {
+   it("uses the popover only for visible nightly release notes", () => {
+     expect(shouldUseSidebarUpdateReleaseNotesPopover(true, nightlyState)).toBe(true);
++    // A ForkHub catalog may serve nightly-based builds with the same
++    // multi-release notes.
++    expect(
++      shouldUseSidebarUpdateReleaseNotesPopover(true, {
++        ...nightlyState,
++        channel: "forkhub",
++        forkhubOwner: "ImBIOS",
++        forkhubRepo: ".forkhub",
++      }),
++    ).toBe(true);
+     expect(shouldUseSidebarUpdateReleaseNotesPopover(false, nightlyState)).toBe(false);
+     expect(
+       shouldUseSidebarUpdateReleaseNotesPopover(true, {
+diff --git a/apps/web/src/components/sidebar/SidebarUpdatePill.tsx b/apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+index f8f61f5210..9e04bd1b85 100644
+--- a/apps/web/src/components/sidebar/SidebarUpdatePill.tsx
++++ b/apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+@@ -40,7 +40,11 @@ export function shouldUseSidebarUpdateReleaseNotesPopover(
+   showUpdateDetails: boolean,
+   state: DesktopUpdateState | null,
+ ): boolean {
+-  return showUpdateDetails && state?.channel === "nightly" && state.releaseNotes.length > 0;
++  return (
++    showUpdateDetails &&
++    (state?.channel === "nightly" || state?.channel === "forkhub") &&
++    state.releaseNotes.length > 0
++  );
+ }
+ 
+ export function handleSidebarUpdateReleaseNotesPopoverOpenChange(
 diff --git a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
 index d229e2d3ca..368df9b722 100644
 --- a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
@@ -1481,7 +1552,7 @@ index c67ecd27c0..5c7db916f7 100644
    downloadUpdate: () => Promise<DesktopUpdateActionResult>;
    installUpdate: () => Promise<DesktopUpdateActionResult>;
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 02e514d83f..33f582baf8 100644
+index 02e514d83f..a217444cbf 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
 @@ -2537,3 +2537,3 @@ export function resolveDesktopRuntimeDependencies(
@@ -1489,7 +1560,19 @@ index 02e514d83f..33f582baf8 100644
 -  updateChannel: "latest" | "nightly",
 +  updateChannel: "latest" | "nightly" | "forkhub",
  ) {
-@@ -2614,3 +2614,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
+@@ -2582,2 +2582,11 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
+ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
++  // ForkHub keeps its own identity on every train: a nightly-based ForkHub
++  // build must not wear upstream nightly's icons.
++  if (isForkHubDesktopBuild()) {
++    return {
++      macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
++      linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
++      windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
++    };
++  }
+   if (resolveDesktopUpdateChannel(version) === "nightly") {
+@@ -2614,3 +2623,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
  
 +export function isForkHubDesktopBuild(): boolean {
 +  return process.env.T3CODE_FORKHUB_BUILD?.trim() === "1";

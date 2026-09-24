@@ -10,6 +10,8 @@
    `forkhub` repoints the electron-updater feed to
    `{provider: "github", owner, repo: ".forkhub"}`; selecting ForkHub with
    no owner fails with a typed error naming the missing profile/org.
+   Nightly-based builds install on ForkHub (prerelease flags on);
+   preview cuts never do.
 3. **Validation is real**: `checkForkHubOwner` accepts an owner with
    published public `.forkhub` releases and rejects invalid names
    (no network), missing catalogs, and empty catalogs

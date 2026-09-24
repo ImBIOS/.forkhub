@@ -14,13 +14,21 @@ on:
     paths:
       - "repos/**"
   schedule:
-    - cron: "0 6 * * *"
+    # 00:00 UTC+7 — nightly check while ImBIOS sleeps. The skip gate below
+    # means this builds only tags with no release yet; manual dispatch
+    # (+ force) covers everything else.
+    - cron: "0 17 * * *"
   workflow_dispatch:
     inputs:
       target:
         description: "Only build this target, e.g. github.com/owner/repo (empty = all)"
         required: false
         default: ""
+      force:
+        description: "Rebuild even if this tag already has a release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -80,13 +88,19 @@ jobs:
           # GHA runners have no SSH keys: normalize git@host:owner/repo
           # to https for public clones.
           URL=$(printf '%s' "$URL" | sed -e 's|^git@\([^:]*\):|https://\1/|')
-          # Per-target opt-out: upstream.json:tag_ignore_pattern (an ERE for
-          # grep -v -E) skips tags a target must never build from — e.g. a
-          # maintainers' preview train. Unset preserves legacy behavior:
-          # newest tag of any train.
-          IGNORE=$(jq -r '.tag_ignore_pattern // empty' "$GITHUB_WORKSPACE/forkhub/repos/${{ matrix.target }}/upstream.json")
+          # Per-target train selection from upstream.json (EREs for grep -E):
+          # tag_match_pattern keeps only matching tags (e.g. a nightly
+          # train); tag_ignore_pattern drops matching tags (e.g. a
+          # maintainers' preview train). Both unset preserves legacy
+          # behavior: newest tag of any train.
+          UJSON="$GITHUB_WORKSPACE/forkhub/repos/${{ matrix.target }}/upstream.json"
+          MATCH=$(jq -r '.tag_match_pattern // empty' "$UJSON")
+          IGNORE=$(jq -r '.tag_ignore_pattern // empty' "$UJSON")
           TAGS=$(git ls-remote --tags --sort=-v:refname "$URL" \
             | grep -o 'refs/tags/v[^^{}]*' | cut -d/ -f3 || true)
+          if [ -n "$MATCH" ]; then
+            TAGS=$(printf '%s\n' "$TAGS" | grep -E -- "$MATCH" || true)
+          fi
           if [ -n "$IGNORE" ]; then
             TAGS=$(printf '%s\n' "$TAGS" | grep -v -E -- "$IGNORE" || true)
           fi
@@ -100,7 +114,38 @@ jobs:
           fi
           echo "UPSTREAM_TAG=$(cat upstream_tag.txt)" >> "$GITHUB_ENV"
 
+      - name: Skip tags that already have a build
+        # Daily cron is a check, not a rebuild: a tag with any release
+        # (updater `v<tag>` or namespaced bundle) is done. workflow_dispatch
+        # with force=true rebuilds anyway.
+        id: skip-check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          UP="$UPSTREAM_TAG"
+          SLUG=$(echo "${{ matrix.target }}" | awk -F/ '{print $(NF-1)"-"$NF}' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')
+          SKIP="false"
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "forced rebuild of $UP"
+          elif [ "$UP" = "v0.0.0" ]; then
+            echo "no upstream tag; building branch fallback"
+          else
+            TAGS=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq -r '.[].tagName')
+            if printf '%s\n' "$TAGS" | grep -qxF "$UP"; then
+              echo "$UP already has an updater release; skipping"
+              SKIP="true"
+            elif printf '%s\n' "$TAGS" | grep -qF "$SLUG-$UP-fh"; then
+              echo "$UP already has a bundle release; skipping"
+              SKIP="true"
+            else
+              echo "$UP has no release yet; building"
+            fi
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+
       - name: Apply intent stack in manifest order + verify gate
+        if: steps.skip-check.outputs.skip != 'true'
         run: |
           set -euo pipefail
           # Absolute paths: git -C changes directory, so relative patch
@@ -127,6 +172,7 @@ jobs:
           done
 
       - name: Repo-native build (or source tarball fallback)
+        if: steps.skip-check.outputs.skip != 'true'
         run: |
           set -euo pipefail
           FH="$GITHUB_WORKSPACE/forkhub"
@@ -149,6 +195,7 @@ jobs:
         # github provider, which resolves versions under `v<version>` tags and
         # cannot consume the namespaced *-fhN bundle tags below). Absent hook
         # = no updater release; the namespaced bundle still publishes.
+        if: steps.skip-check.outputs.skip != 'true'
         working-directory: forkhub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -162,6 +209,7 @@ jobs:
           fi
 
       - name: Publish namespaced release
+        if: steps.skip-check.outputs.skip != 'true'
         working-directory: forkhub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

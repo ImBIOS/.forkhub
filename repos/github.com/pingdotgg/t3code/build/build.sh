@@ -107,7 +107,25 @@ for f in "$DIST"/forkhub/*; do
   mv "$f" "$DIST"/
   MOVED=$((MOVED + 1))
 done
+rm -rf "$DIST/forkhub" 2>/dev/null || true
 [ "$MOVED" -gt 0 ] || fail_soft "artifact script produced no files"
+# electron-builder names updater manifests after the version's channel
+# (latest-*.yml for stable, nightly-*.yml for nightly). The ForkHub track
+# always polls the `latest` manifests, so alias whichever train was built
+# under the other name. Manifest content is channel-agnostic
+# (version/files/sha512), only the filename selects the feed.
+for f in "$DIST"/nightly-*.yml; do
+  [ -e "$f" ] || continue
+  base=${f##*/}
+  alias="$DIST/latest-${base#nightly-}"
+  [ -e "$alias" ] || cp "$f" "$alias"
+done
+for f in "$DIST"/latest-*.yml; do
+  [ -e "$f" ] || continue
+  base=${f##*/}
+  alias="$DIST/nightly-${base#latest-}"
+  [ -e "$alias" ] || cp "$f" "$alias"
+done
 rm -rf "$DIST/forkhub" 2>/dev/null || true
 say "artifacts moved to dist: $MOVED file(s)"
 ls "$DIST" | tee -a "$LOG"

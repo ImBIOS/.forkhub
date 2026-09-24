@@ -1,7 +1,10 @@
-# Build — github.com/pingdotgg/t3code (ForkHub track)
+# Build — github.com/pingdotgg/t3code (ForkHub track, nightly train)
 
 Repo-native build for the ForkHub T3 Code channel. Runs on `ubuntu-latest`
-after the intent stack is applied and `verify.sh` passes.
+after the intent stack is applied and `verify.sh` passes. This catalog
+follows upstream **nightly** (`upstream.json:tag_match_pattern`); each
+build carries the upstream nightly version verbatim (e.g.
+`0.0.43-nightly.20260924.2187`).
 
 ## What `build.sh` does
 
@@ -37,6 +40,16 @@ polls. The shared workflow step separately publishes the namespaced
 Keeping the upstream version (no `+fh` suffix) means a ForkHub install
 compares versions 1:1 with upstream: switching tracks at the same version
 needs one hand-install; later ForkHub releases then flow automatically.
+Nightly-based ForkHub builds install on the ForkHub track because the app
+allows prereleases there (`allowPrerelease`, like the nightly track).
+
+electron-builder names updater manifests after the version's channel, so a
+nightly build emits `nightly-*.yml` only — but the ForkHub track polls the
+`latest` manifests. `build.sh` therefore aliases whichever train was built
+under the other manifest name (content is channel-agnostic). Both names
+upload to the updater release; `publish.sh` requires at least one of them
+before creating it. ForkHub builds always wear production icons
+(`T3CODE_FORKHUB_BUILD=1`), never upstream nightly's, whatever the train.
 
 ## Requirements / limits (v1)
 

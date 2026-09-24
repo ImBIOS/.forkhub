@@ -1,15 +1,17 @@
 # Build triggers — github.com/pingdotgg/t3code
 
-User-explicit choice (recorded 2026-09-24, ImBIOS):
+User-explicit choice (recorded 2026-09-24, ImBIOS; night train confirmed later same day):
 
-- **On intent change (push to `repos/**`): build.** A changed intent must
-  produce a fresh verified bundle immediately.
-- **Daily upstream poll (06:00 UTC cron): build on new stable tags only.**
-  `upstream.json:tag_ignore_pattern` keeps the shared clone step off the
-  `-nightly`/`-preview` maintainer trains; a failed apply on drift is the
-  signal to re-derive, not to hand-patch.
-- **Manual (`workflow_dispatch`, optional `target` filter): build.**
-  Used for rebuilds and for cutting a ForkHub release on demand.
+- **Nightly check at 00:00 UTC+7 (17:00 UTC cron): build only untagged.**
+  The shared workflow resolves the newest `-nightly.` tag
+  (`upstream.json:tag_match_pattern`) and the skip gate no-ops when that
+  tag already has an updater or bundle release. No new nightly = quiet
+  green run, no noise, no compute beyond the check.
+- **On intent change (push to `repos/**`): build** (same skip gate
+  applies — a push with no new upstream tag only rebuilds with force).
+- **Manual (`workflow_dispatch`, optional `target` filter, `force`
+  flag): build.** Rebuilds and on-demand ForkHub releases; `force=true`
+  rebuilds even an already-built tag.
 
 To change the poll cadence, edit the cron in
 `.github/workflows/forkhub-build.yml` (shared file — affects all targets).

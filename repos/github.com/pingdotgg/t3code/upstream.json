@@ -1,0 +1,11 @@
+{
+  "upstream_url": "https://github.com/pingdotgg/t3code.git",
+  "upstream_main_branch": "main",
+  "upstream_remote": "upstream",
+  "fork_url": "git@github.com:ImBIOS/t3code.git",
+  "fork_remote": "origin",
+  "last_known_upstream_sha": "78af372",
+  "last_synced_at": "2026-09-24T00:00:00.000Z",
+  "schedule": "on-upstream-release",
+  "tag_ignore_pattern": "-(nightly|preview)\\.[0-9]{8}\\."
+}

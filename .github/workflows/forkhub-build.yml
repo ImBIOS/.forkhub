@@ -1,0 +1,185 @@
+name: forkhub build
+
+# Hard-coded reusable builder for ALL intent-patched targets in this .forkhub repo.
+# Per-target customization lives in repos/<host>/<owner>/<repo>/build/ (BUILD.md,
+# build.sh, CONSUME.md, triggers.md) — never in this file. Safe to leave as-is.
+#
+# Triggers: push to repos/**, daily schedule (upstream-release polling), manual.
+# The per-target build/triggers.md records the USER-EXPLICIT trigger choice
+# (an agent must ask the user; triggers affect token/compute spend). To change
+# the poll cadence, edit the cron below.
+
+on:
+  push:
+    paths:
+      - "repos/**"
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Only build this target, e.g. github.com/owner/repo (empty = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: list
+        run: |
+          set -euo pipefail
+          FILTER="${{ inputs.target }}"
+          TARGETS=$(for m in repos/*/*/*/manifest.json; do
+            [ -f "$m" ] || continue
+            t=$(dirname "$m" | sed 's|^repos/||')
+            if [ -n "$FILTER" ] && [ "$t" != "$FILTER" ]; then continue; fi
+            printf '%s\n' "$t"
+          done | jq -R . | jq -cs .)
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [discover]
+    if: needs.discover.outputs.targets != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.discover.outputs.targets) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: forkhub
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Resolve upstream + patch stack
+        id: ctx
+        working-directory: forkhub
+        run: |
+          set -euo pipefail
+          M="repos/${{ matrix.target }}/manifest.json"
+          U="repos/${{ matrix.target }}/upstream.json"
+          echo "upstream_url=$(jq -r .upstream_url "$U")" >> "$GITHUB_OUTPUT"
+          echo "upstream_branch=$(jq -r '.upstream_main_branch // "main"' "$U")" >> "$GITHUB_OUTPUT"
+          echo "order=$(jq -c .apply_order "$M")" >> "$GITHUB_OUTPUT"
+
+      - name: "Clone upstream at latest tag (fallback: main branch)"
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/build" && mkdir -p "$GITHUB_WORKSPACE/build"
+          URL="${{ steps.ctx.outputs.upstream_url }}"
+          # GHA runners have no SSH keys: normalize git@host:owner/repo
+          # to https for public clones.
+          URL=$(printf '%s' "$URL" | sed -e 's|^git@\([^:]*\):|https://\1/|')
+          # Per-target opt-out: upstream.json:tag_ignore_pattern (an ERE for
+          # grep -v -E) skips tags a target must never build from — e.g. a
+          # maintainers' preview train. Unset preserves legacy behavior:
+          # newest tag of any train.
+          IGNORE=$(jq -r '.tag_ignore_pattern // empty' "$GITHUB_WORKSPACE/forkhub/repos/${{ matrix.target }}/upstream.json")
+          TAGS=$(git ls-remote --tags --sort=-v:refname "$URL" \
+            | grep -o 'refs/tags/v[^^{}]*' | cut -d/ -f3 || true)
+          if [ -n "$IGNORE" ]; then
+            TAGS=$(printf '%s\n' "$TAGS" | grep -v -E -- "$IGNORE" || true)
+          fi
+          TAG=$(printf '%s\n' "$TAGS" | head -1 || true)
+          if [ -n "$TAG" ]; then
+            git clone --depth 1 --branch "$TAG" "$URL" build
+            echo "$TAG" > upstream_tag.txt
+          else
+            git clone --depth 1 --branch "${{ steps.ctx.outputs.upstream_branch }}" "$URL" build
+            echo "v0.0.0" > upstream_tag.txt
+          fi
+          echo "UPSTREAM_TAG=$(cat upstream_tag.txt)" >> "$GITHUB_ENV"
+
+      - name: Apply intent stack in manifest order + verify gate
+        run: |
+          set -euo pipefail
+          # Absolute paths: git -C changes directory, so relative patch
+          # paths would resolve inside the build checkout (bug).
+          FH="$GITHUB_WORKSPACE/forkhub"
+          BD="$GITHUB_WORKSPACE/build"
+          for id in $(jq -r '.apply_order[]' "$FH/repos/${{ matrix.target }}/manifest.json"); do
+            p="$FH/repos/${{ matrix.target }}/patches/$id"
+            echo "→ $id"
+            # Heal colored diffs captured with color.diff=always (CLI now
+            # captures --no-color, but old intents may carry ANSI escapes).
+            CLEAN="$(mktemp)"
+            sed -e 's/\x1b\[[0-9;]*m//g' "$p/reference.diff" > "$CLEAN"
+            if ! grep -qE '^(diff --git |--- )' "$CLEAN"; then
+              echo "::warning::$id reference.diff has no usable hunks — skipping (re-capture or re-derive)"
+              continue
+            fi
+            git -C "$BD" apply --check "$CLEAN"
+            git -C "$BD" apply "$CLEAN"
+            # -f (not -x): verify.sh files are checked in non-executable.
+            if [ -f "$p/verify.sh" ]; then
+              (cd "$BD" && sh "$p/verify.sh")
+            fi
+          done
+
+      - name: Repo-native build (or source tarball fallback)
+        run: |
+          set -euo pipefail
+          FH="$GITHUB_WORKSPACE/forkhub"
+          BD="$GITHUB_WORKSPACE/build"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          if [ -f "$FH/repos/${{ matrix.target }}/build/build.sh" ]; then
+            (cd "$BD" && sh "$FH/repos/${{ matrix.target }}/build/build.sh")
+          fi
+          if [ -z "$(ls -A "$GITHUB_WORKSPACE/dist")" ]; then
+            # Default supports ANY repo type: ship the verified patched source.
+            # A placeholder build.sh is a deliberate no-op, so fresh scaffolds
+            # stay green until the agent fills in the repo-native build.
+            SLUG=$(echo "${{ matrix.target }}" | awk -F/ '{print $(NF-1)"-"$NF}' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')
+            tar -czf "$GITHUB_WORKSPACE/dist/$SLUG-patched-source.tar.gz" -C "$BD" .
+          fi
+          (cd "$GITHUB_WORKSPACE/dist" && sha256sum * > SHA256SUMS || shasum -a 256 * > SHA256SUMS)
+
+      - name: Publish updater-channel release (target hook)
+        # Optional per-target hook for updater feeds (e.g. electron-updater's
+        # github provider, which resolves versions under `v<version>` tags and
+        # cannot consume the namespaced *-fhN bundle tags below). Absent hook
+        # = no updater release; the namespaced bundle still publishes.
+        working-directory: forkhub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          HOOK="repos/${{ matrix.target }}/build/publish.sh"
+          if [ -f "$HOOK" ]; then
+            TARGET="${{ matrix.target }}" DIST="$GITHUB_WORKSPACE/dist" sh "$HOOK"
+          else
+            echo "no build/publish.sh for ${{ matrix.target }}; skipping updater release"
+          fi
+
+      - name: Publish namespaced release
+        working-directory: forkhub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SLUG=$(echo "${{ matrix.target }}" | awk -F/ '{print $(NF-1)"-"$NF}' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')
+          UP="$UPSTREAM_TAG"
+          N=1
+          while gh release view "$SLUG-$UP-fh$N" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; do N=$((N+1)); done
+          TAG="$SLUG-$UP-fh$N"
+          NOTES=$(mktemp)
+          {
+            echo "# $TAG"
+            echo
+            echo "Patched build of `${{ matrix.target }}` @ `$UP` + intent stack."
+            if [ -f "repos/${{ matrix.target }}/build/CONSUME.md" ]; then
+              echo
+              cat "repos/${{ matrix.target }}/build/CONSUME.md"
+            fi
+          } > "$NOTES"
+          gh release create "$TAG" $GITHUB_WORKSPACE/dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file "$NOTES"

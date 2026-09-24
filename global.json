@@ -1,0 +1,7 @@
+{
+  "user": "Imamuzzaki Abu Salam",
+  "default_agent": "opencode",
+  "token_budget_per_run": 500000,
+  "on_budget_exceed": "pause",
+  "cost_tracking": true
+}

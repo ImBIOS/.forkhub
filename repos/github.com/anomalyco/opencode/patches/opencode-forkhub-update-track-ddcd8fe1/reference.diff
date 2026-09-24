@@ -23,12 +23,12 @@ index a2bd7ad8a9..6dc0815157 100644
    "sound.option.alert01": "Alert 01",
    "sound.option.alert02": "Alert 02",
 diff --git a/packages/app/src/settings/general/general.tsx b/packages/app/src/settings/general/general.tsx
-index 42570f0dba..3dcac23732 100644
+index 42570f0dba..f27d45a204 100644
 --- a/packages/app/src/settings/general/general.tsx
 +++ b/packages/app/src/settings/general/general.tsx
 @@ -1,4 +1,4 @@
 -import { Component, Show, createMemo, createResource } from "solid-js"
-+import { Component, Show, createMemo, createResource, createSignal } from "solid-js"
++import { Component, Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
  import { createMediaQuery } from "@solid-primitives/media"
  import { Button } from "@opencode/ui/button"
  import { Select } from "@opencode/ui/select"
@@ -42,7 +42,7 @@ index 42570f0dba..3dcac23732 100644
  import {
    type FollowUpBehavior,
    type TerminalPlacement,
-@@ -455,40 +458,149 @@ export const SettingsGeneral: Component = () => {
+@@ -455,40 +458,156 @@ export const SettingsGeneral: Component = () => {
      </div>
    )
  
@@ -59,6 +59,13 @@ index 42570f0dba..3dcac23732 100644
 +    const [ownerInput, setOwnerInput] = createSignal("")
 +    const [checking, setChecking] = createSignal(false)
 +    const [status, setStatus] = createSignal<{ ok: boolean; message: string } | null>(null)
++    // The track can change out-of-band (another window, a failed-then-retried
++    // switch); re-poll so the select converges without a remount.
++    createEffect(() => {
++      if (!platform.updater?.getTrack) return
++      const timer = setInterval(() => void refetchTrack(), 15000)
++      onCleanup(() => clearInterval(timer))
++    })
 +    const currentTrack = () => trackInfo()?.track ?? "latest"
 +    const currentOwner = () => trackInfo()?.forkhubOwner ?? null
 +

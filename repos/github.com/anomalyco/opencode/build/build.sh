@@ -45,6 +45,12 @@ bun install >>"$LOG" 2>&1 || fail_soft "bun install failed"
 
 mkdir -p "$DIST/forkhub"
 
+say "building CLI first (prod desktop bundles it via OPENCODE_CLI_DIST)"
+(cd packages/cli && bun run build >>"$LOG" 2>&1) \
+  && say "cli build ok" \
+  || fail_soft "cli build failed"
+export OPENCODE_CLI_DIST="$PWD/packages/cli/dist"
+
 say "building desktop AppImage (forkhub variant)"
 (cd packages/desktop && \
   OPENCODE_VERSION="$VER" OPENCODE_CHANNEL=prod OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios \
@@ -68,11 +74,6 @@ for f in packages/desktop/dist/*.AppImage packages/desktop/dist/latest-*.yml pac
 done
 [ -n "$FOUND" ] || fail_soft "no AppImage/latest-*.yml artifacts produced"
 say "updater artifacts:$FOUND"
-
-say "building CLI"
-(cd packages/cli && bun run build >>"$LOG" 2>&1) \
-  && say "cli build ok" \
-  || say "cli build failed; continuing with desktop-only artifacts"
 
 say "staging ForkHub CLI npm package"
 if [ -f packages/cli/package.json ]; then

@@ -11,15 +11,18 @@ only (see `upstream.json:tag_match_pattern`).
    upstream version 1:1 (switching tracks at the same version needs one
    hand-install; later ForkHub releases then flow automatically).
 2. Installs workspace deps (`bun install`, lockfile-pinned).
-3. Builds the **Linux x64 AppImage, unsigned**, with:
+3. Builds the **CLI** (`packages/cli`) first and exports
+   `OPENCODE_CLI_DIST` — v2 prod desktop builds bundle the locally built
+   CLI (`prebuild.ts` refuses prod without it).
+4. Builds the **Linux x64 AppImage, unsigned**, with:
    - `OPENCODE_CHANNEL=prod` (prod/latest base),
    - `OPENCODE_FORKHUB_BUILD=1` + `FORKHUB_OWNER=imbios` → app id
      `ai.opencode.desktop.forkhub.imbios.latest`, product name
      "OpenCode x ForkHub" (side-by-side with stock installs),
    - `OPENCODE_DESKTOP_UPDATE_REPOSITORY=$GITHUB_REPOSITORY` → the emitted
      `latest-linux.yml` points electron-updater at this catalog repo.
-4. Builds the **CLI** (`packages/opencode`) and stages `latest-linux.yml`,
-   AppImage, blockmap, plus CLI archives into `$GITHUB_WORKSPACE/dist`.
+4. Copies the produced artifacts (AppImage, `latest-linux.yml`, blockmap)
+   plus CLI archives into `$GITHUB_WORKSPACE/dist`.
 5. Tries `npm publish` of `@imbios/with-fh-opencode-ai` with tag `latest`
    when `NPM_TOKEN` is present; otherwise stages an `npm pack` tarball so
    the bundle release still carries the CLI.

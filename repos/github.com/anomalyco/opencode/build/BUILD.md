@@ -21,6 +21,9 @@ only (see `upstream.json:tag_match_pattern`).
      "OpenCode x ForkHub" (side-by-side with stock installs),
    - `OPENCODE_DESKTOP_UPDATE_REPOSITORY=$GITHUB_REPOSITORY` → the emitted
      `latest-linux.yml` points electron-updater at this catalog repo.
+   - Linux target is AppImage-only (`--linux AppImage`): deb/rpm need
+     `fpm` which is flaky on stock runners, and the ForkHub channel is
+     AppImage-first like upstream's portable story.
 4. Copies the produced artifacts (AppImage, `latest-linux.yml`, blockmap)
    plus CLI archives into `$GITHUB_WORKSPACE/dist`.
 5. Tries `npm publish` of `@imbios/with-fh-opencode-ai` with tag `latest`

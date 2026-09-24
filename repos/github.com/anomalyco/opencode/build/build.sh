@@ -63,7 +63,7 @@ say "building desktop AppImage (forkhub variant)"
 (cd packages/desktop && \
   OPENCODE_CHANNEL=prod OPENCODE_FORKHUB_BUILD=1 FORKHUB_OWNER=imbios \
   OPENCODE_DESKTOP_UPDATE_REPOSITORY="$REPO" \
-  npx electron-builder --linux --publish never --config electron-builder.config.ts >>"$LOG" 2>&1) \
+  npx electron-builder --linux AppImage --publish never --config electron-builder.config.ts >>"$LOG" 2>&1) \
   || fail_soft "electron-builder packaging failed"
 
 say "collecting updater artifacts"

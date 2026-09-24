@@ -1,0 +1,947 @@
+diff --git a/packages/app/src/runtime/i18n/en.ts b/packages/app/src/runtime/i18n/en.ts
+index a2bd7ad8a9..6dc0815157 100644
+--- a/packages/app/src/runtime/i18n/en.ts
++++ b/packages/app/src/runtime/i18n/en.ts
+@@ -1353,6 +1353,19 @@ export const dict = {
+   "settings.updates.action.installing": "Installing…",
+   "settings.updates.toast.latest.title": "You're up to date",
+   "settings.updates.toast.latest.description": "You're running the latest version of OpenCode.",
++  "settings.updates.row.track.title": "Update track",
++  "settings.updates.row.track.description": "Latest follows upstream releases. ForkHub follows another account's .forkhub releases.",
++  "settings.updates.track.latest": "Latest",
++  "settings.updates.track.forkhub": "ForkHub",
++  "settings.updates.row.forkhubOwner.title": "ForkHub channel",
++  "settings.updates.row.forkhubOwner.description": "GitHub profile or org whose .forkhub releases form the update channel.",
++  "settings.updates.row.forkhubOwner.placeholder": "Profile or org name",
++  "settings.updates.row.forkhubOwner.check": "Check",
++  "settings.updates.row.forkhubOwner.checking": "Checking…",
++  "settings.updates.forkhub.valid": "{{owner}}/.forkhub has ForkHub releases (latest {{tag}}).",
++  "settings.updates.forkhub.invalid": "Not a ForkHub channel yet.",
++  "settings.updates.toast.forkhub.title": "ForkHub channel set",
++  "settings.updates.toast.forkhub.description": "Now polling {{owner}}/.forkhub releases.",
+   "sound.option.none": "None",
+   "sound.option.alert01": "Alert 01",
+   "sound.option.alert02": "Alert 02",
+diff --git a/packages/app/src/settings/general/general.tsx b/packages/app/src/settings/general/general.tsx
+index 42570f0dba..3dcac23732 100644
+--- a/packages/app/src/settings/general/general.tsx
++++ b/packages/app/src/settings/general/general.tsx
+@@ -1,4 +1,4 @@
+-import { Component, Show, createMemo, createResource } from "solid-js"
++import { Component, Show, createMemo, createResource, createSignal } from "solid-js"
+ import { createMediaQuery } from "@solid-primitives/media"
+ import { Button } from "@opencode/ui/button"
+ import { Select } from "@opencode/ui/select"
+@@ -8,6 +8,9 @@ import { TimelineDetailControl } from "@/settings/timeline-detail"
+ import { useLanguage } from "@/runtime/i18n/language"
+ import { usePlatform } from "@/runtime/platform/platform"
+ import { useUpdaterAction } from "@/shell/updates/action"
++import { checkForkHubOwner, forkHubRepoWebUrl, normalizeForkHubOwner } from "@/shell/updates/forkhub"
++import type { UpdateTrack } from "@/shell/updates/types"
++import { showToast } from "@/shell/notifications/toast"
+ import {
+   type FollowUpBehavior,
+   type TerminalPlacement,
+@@ -455,40 +458,149 @@ export const SettingsGeneral: Component = () => {
+     </div>
+   )
+ 
+-  const UpdatesSection = () => (
+-    <div class="settings-section">
+-      <h3 class="settings-section-title">{language.t("settings.general.section.updates")}</h3>
++  const UpdatesSection = () => {
++    const trackOptions: UpdateTrack[] = ["latest", "forkhub"]
++    const [trackInfo, { refetch: refetchTrack }] = createResource(
++      () => platform.updater?.getTrack?.(),
++      (promise) => promise.catch(() => undefined),
++      { initialValue: undefined },
++    )
++    const [ownerInput, setOwnerInput] = createSignal("")
++    const [checking, setChecking] = createSignal(false)
++    const [status, setStatus] = createSignal<{ ok: boolean; message: string } | null>(null)
++    const currentTrack = () => trackInfo()?.track ?? "latest"
++    const currentOwner = () => trackInfo()?.forkhubOwner ?? null
++
++    const selectTrack = (track: UpdateTrack) => {
++      const setTrack = platform.updater?.setTrack
++      if (!setTrack) return
++      void setTrack(track)
++        .then(() => refetchTrack())
++        .catch((error) => setStatus({ ok: false, message: error instanceof Error ? error.message : String(error) }))
++    }
++
++    const checkOwner = () => {
++      const setForkHubOwner = platform.updater?.setForkHubOwner
++      if (!setForkHubOwner) return
++      const raw = ownerInput().trim() || currentOwner() || ""
++      if (!normalizeForkHubOwner(raw)) {
++        setStatus({ ok: false, message: language.t("settings.updates.forkhub.invalid") })
++        return
++      }
++      setChecking(true)
++      setStatus(null)
++      void checkForkHubOwner(raw)
++        .then((result) =>
++          setForkHubOwner(result.owner).then(() => {
++            setOwnerInput(result.owner)
++            setStatus({
++              ok: true,
++              message: language.t("settings.updates.forkhub.valid", {
++                owner: result.owner,
++                tag: result.latestTag ?? "",
++              }),
++            })
++            showToast({
++              variant: "success",
++              icon: "circle-check",
++              title: language.t("settings.updates.toast.forkhub.title"),
++              description: language.t("settings.updates.toast.forkhub.description", { owner: result.owner }),
++            })
++            selectTrack("forkhub")
++          }),
++        )
++        .catch((error) => setStatus({ ok: false, message: error instanceof Error ? error.message : String(error) }))
++        .finally(() => setChecking(false))
++    }
++
++    return (
++      <div class="settings-section">
++        <h3 class="settings-section-title">{language.t("settings.general.section.updates")}</h3>
++
++        <SettingsList>
++          <SettingsRow
++            title={language.t("settings.general.row.releaseNotes.title")}
++            description={language.t("settings.general.row.releaseNotes.description")}
++          >
++            <div data-action="settings-release-notes">
++              <Switch
++                checked={settings.general.releaseNotes()}
++                onChange={(checked) => settings.general.setReleaseNotes(checked)}
++              />
++            </div>
++          </SettingsRow>
+ 
+-      <SettingsList>
+-        <SettingsRow
+-          title={language.t("settings.general.row.releaseNotes.title")}
+-          description={language.t("settings.general.row.releaseNotes.description")}
+-        >
+-          <div data-action="settings-release-notes">
+-            <Switch
+-              checked={settings.general.releaseNotes()}
+-              onChange={(checked) => settings.general.setReleaseNotes(checked)}
+-            />
+-          </div>
+-        </SettingsRow>
++          <Show when={platform.updater?.getTrack}>
++            <SettingsRow
++              title={language.t("settings.updates.row.track.title")}
++              description={language.t("settings.updates.row.track.description")}
++            >
++              <Select
++                data-action="settings-update-track"
++                options={trackOptions}
++                current={trackOptions.find((option) => option === currentTrack())}
++                placement="bottom-end"
++                gutter={6}
++                label={(option) => language.t(`settings.updates.track.${option}` as const)}
++                onSelect={(option) => option && selectTrack(option)}
++              />
++            </SettingsRow>
+ 
+-        <SettingsRow
+-          title={language.t("settings.updates.row.check.title")}
+-          description={language.t("settings.updates.row.check.description")}
+-        >
+-          <Button
+-            data-action="settings-check-updates"
+-            size="normal"
+-            variant="neutral"
+-            disabled={!updater.action().run}
+-            onClick={() => updater.run()}
++            <SettingsRow
++              title={language.t("settings.updates.row.forkhubOwner.title")}
++              description={language.t("settings.updates.row.forkhubOwner.description")}
++            >
++              <div class="flex items-center gap-2" data-action="settings-forkhub-owner">
++                <div class="w-full sm:w-[180px]">
++                  <TextInput
++                    type="text"
++                    appearance="base"
++                    value={ownerInput() || currentOwner() || ""}
++                    onInput={(event) => setOwnerInput(event.currentTarget.value)}
++                    placeholder={language.t("settings.updates.row.forkhubOwner.placeholder")}
++                    spellcheck={false}
++                    autocorrect="off"
++                    autocomplete="off"
++                    autocapitalize="off"
++                    aria-label={language.t("settings.updates.row.forkhubOwner.title")}
++                  />
++                </div>
++                <Button size="normal" variant="neutral" disabled={checking()} onClick={checkOwner}>
++                  {language.t(checking() ? "settings.updates.row.forkhubOwner.checking" : "settings.updates.row.forkhubOwner.check")}
++                </Button>
++              </div>
++            </SettingsRow>
++
++            <Show when={status()}>
++              <p class="text-sm opacity-70" data-action="settings-forkhub-status">
++                {status()?.message}{" "}
++                <Show when={status()?.ok && (ownerInput() || currentOwner())}>
++                  <ExternalLink href={forkHubRepoWebUrl(ownerInput() || currentOwner() || "")}>
++                    {forkHubRepoWebUrl(ownerInput() || currentOwner() || "")}
++                  </ExternalLink>
++                </Show>
++              </p>
++            </Show>
++          </Show>
++
++          <SettingsRow
++            title={language.t("settings.updates.row.check.title")}
++            description={language.t("settings.updates.row.check.description")}
+           >
+-            {language.t(updater.action().label)}
+-          </Button>
+-        </SettingsRow>
+-      </SettingsList>
+-    </div>
+-  )
++            <Button
++              data-action="settings-check-updates"
++              size="normal"
++              variant="neutral"
++              disabled={!updater.action().run}
++              onClick={() => updater.run()}
++            >
++              {language.t(updater.action().label)}
++            </Button>
++          </SettingsRow>
++        </SettingsList>
++      </div>
++    )
++  }
+ 
+   return (
+     <>
+diff --git a/packages/app/src/shell/titlebar/titlebar.tsx b/packages/app/src/shell/titlebar/titlebar.tsx
+index 6c35244335..6c4abe51d5 100644
+--- a/packages/app/src/shell/titlebar/titlebar.tsx
++++ b/packages/app/src/shell/titlebar/titlebar.tsx
+@@ -792,10 +792,27 @@ function ChannelIndicator(props: {
+   const language = useLanguage()
+   const platform = usePlatform()
+   const channel = import.meta.env.VITE_OPENCODE_CHANNEL
+-  if (!channel || channel === "prod") return null
++  const [trackInfo] = createResource(
++    () => platform.updater?.getTrack?.(),
++    (promise) => promise.catch(() => undefined),
++    { initialValue: undefined },
++  )
++  const forkhub = () => trackInfo()?.track === "forkhub"
++  if ((!channel || channel === "prod") && !forkhub()) return null
+ 
+   const label = () => language.t(`titlebar.channel.${channel}`)
+   const debug = () => (channel === "dev" || channel === "local" ? props.debugTools : undefined)
++  if (!channel || channel === "prod")
++    return (
++      <Show when={forkhub()}>
++        <div
++          data-slot="channel-indicator"
++          class="flex h-7 shrink-0 items-center rounded-[6px] bg-icon-interactive-base px-2 font-mono text-[#FFF] [app-region:no-drag]"
++        >
++          x ForkHub
++        </div>
++      </Show>
++    )
+   return (
+     <Tooltip
+       placement={props.sidebar ? "right" : "bottom"}
+diff --git a/packages/app/src/shell/updates/forkhub.test.ts b/packages/app/src/shell/updates/forkhub.test.ts
+new file mode 100644
+index 0000000000..53fdae1ab7
+--- /dev/null
++++ b/packages/app/src/shell/updates/forkhub.test.ts
+@@ -0,0 +1,26 @@
++import { describe, expect, test } from "bun:test"
++import { checkForkHubOwner, normalizeForkHubOwner } from "./forkhub"
++
++describe("normalizeForkHubOwner", () => {
++  test("accepts valid names", () => {
++    expect(normalizeForkHubOwner("ImBIOS")).toBe("ImBIOS")
++  })
++  test("rejects invalid names", () => {
++    expect(normalizeForkHubOwner("not a name!")).toBeNull()
++    expect(normalizeForkHubOwner("")).toBeNull()
++  })
++})
++
++describe("checkForkHubOwner", () => {
++  test("passes when releases exist", async () => {
++    const fetchImpl = (async () =>
++      new Response(JSON.stringify([{ tag_name: "v2.0.16", draft: false }]), { status: 200 })) as unknown as typeof fetch
++    const result = await checkForkHubOwner("ImBIOS", fetchImpl)
++    expect(result.owner).toBe("ImBIOS")
++    expect(result.latestTag).toBe("v2.0.16")
++  })
++  test("fails on 404", async () => {
++    const fetchImpl = (async () => new Response("nope", { status: 404 })) as unknown as typeof fetch
++    await expect(checkForkHubOwner("ImBIOS", fetchImpl)).rejects.toThrow("no .forkhub releases")
++  })
++})
+diff --git a/packages/app/src/shell/updates/forkhub.ts b/packages/app/src/shell/updates/forkhub.ts
+new file mode 100644
+index 0000000000..94bb86ac66
+--- /dev/null
++++ b/packages/app/src/shell/updates/forkhub.ts
+@@ -0,0 +1,49 @@
++// ForkHub channel helpers shared by settings UI. The main-process copy lives
++// in packages/desktop/src/main/updater/forkhub.ts; keep the two in sync.
++
++export const FORKHUB_REPO = ".forkhub" as const
++
++const FORKHUB_OWNER_PATTERN = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/
++
++export function normalizeForkHubOwner(raw: unknown): string | null {
++  if (typeof raw !== "string") return null
++  const owner = raw.trim()
++  if (owner.length < 1 || owner.length > 39) return null
++  if (!FORKHUB_OWNER_PATTERN.test(owner)) return null
++  return owner
++}
++
++export function forkHubReleasesApiUrl(owner: string): string {
++  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(FORKHUB_REPO)}/releases?per_page=5`
++}
++
++export function forkHubRepoWebUrl(owner: string): string {
++  return `https://github.com/${owner}/${FORKHUB_REPO}/releases`
++}
++
++export type ForkHubOwnerCheck = {
++  owner: string
++  latestTag: string | null
++}
++
++export async function checkForkHubOwner(rawOwner: string, fetchImpl: typeof fetch = fetch): Promise<ForkHubOwnerCheck> {
++  const owner = normalizeForkHubOwner(rawOwner)
++  if (!owner) throw new Error(`"${rawOwner.trim()}" is not a valid GitHub profile or org name.`)
++  const response = await fetchImpl(forkHubReleasesApiUrl(owner), {
++    headers: { Accept: "application/vnd.github+json" },
++  })
++  if (response.status === 404) throw new Error(`${owner} has no .forkhub releases yet.`)
++  if (response.status === 403) throw new Error(`GitHub rate-limited the check for ${owner}/.forkhub.`)
++  if (!response.ok) throw new Error(`Could not check ${owner}/.forkhub (HTTP ${response.status}).`)
++  const rows = (await response.json()) as unknown
++  const releases = Array.isArray(rows) ? rows.filter(isUsableRelease) : []
++  if (releases.length === 0) throw new Error(`${owner}/.forkhub exists but has no published releases yet.`)
++  const latestTag = typeof releases[0].tag_name === "string" ? releases[0].tag_name : null
++  return { owner, latestTag }
++}
++
++function isUsableRelease(row: unknown): row is { tag_name: string; draft?: unknown } {
++  if (typeof row !== "object" || row === null) return false
++  const candidate = row as { tag_name?: unknown; draft?: unknown }
++  return candidate.draft !== true && typeof candidate.tag_name === "string"
++}
+diff --git a/packages/app/src/shell/updates/types.ts b/packages/app/src/shell/updates/types.ts
+index b7209d8522..c7f775b675 100644
+--- a/packages/app/src/shell/updates/types.ts
++++ b/packages/app/src/shell/updates/types.ts
+@@ -11,8 +11,19 @@ export type UpdaterState =
+   | { status: "installing"; version: string }
+   | { status: "error"; message: string }
+ 
++export type UpdateTrack = "latest" | "forkhub"
++
++export type UpdateTrackInfo = {
++  track: UpdateTrack
++  forkhubOwner: string | null
++  forkhubRepo: ".forkhub"
++}
++
+ export type UpdaterPlatform = {
+   state: Accessor<UpdaterState>
+   check(): Promise<UpdaterState>
+   install(): Promise<void>
++  getTrack?(): Promise<UpdateTrackInfo>
++  setTrack?(track: UpdateTrack): Promise<UpdateTrackInfo>
++  setForkHubOwner?(owner: string): Promise<UpdateTrackInfo>
+ }
+diff --git a/packages/desktop/electron-builder.config.ts b/packages/desktop/electron-builder.config.ts
+index 3cb1302ee8..c9537b58d2 100644
+--- a/packages/desktop/electron-builder.config.ts
++++ b/packages/desktop/electron-builder.config.ts
+@@ -158,6 +158,27 @@ const getBase = (appId: string): Configuration => ({
+ })
+ 
+ function getConfig() {
++  // ForkHub builds ride the prod base but publish to a `.forkhub` catalog
++  // repo and install side-by-side: ai.opencode.desktop.forkhub.<owner>.latest.
++  if (process.env.OPENCODE_FORKHUB_BUILD === "1") {
++    const owner = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(process.env.FORKHUB_OWNER ?? "")
++      ? (process.env.FORKHUB_OWNER as string).toLowerCase()
++      : "imbios"
++    const appId = `ai.opencode.desktop.forkhub.${owner}.latest`
++    const repoOverride = process.env.OPENCODE_DESKTOP_UPDATE_REPOSITORY
++    const publishOwner = repoOverride?.includes("/") ? repoOverride.split("/")[0] : owner === "imbios" ? "ImBIOS" : owner
++    const publishRepo = repoOverride?.includes("/") ? repoOverride.split("/").slice(1).join("/") : ".forkhub"
++    const base = getBase(appId)
++    return {
++      ...base,
++      appId,
++      productName: "OpenCode x ForkHub",
++      protocols: { name: "OpenCode x ForkHub", schemes: ["opencode"] },
++      publish: { provider: "github", owner: publishOwner, repo: publishRepo, channel: "latest" },
++      deb: { fpm: [metainfoFpm(appId)] },
++      rpm: { packageName: "opencode-forkhub", fpm: [metainfoFpm(appId)] },
++    }
++  }
+   const appId = APP_IDS[channel]
+   const base = getBase(appId)
+ 
+diff --git a/packages/desktop/electron.vite.config.ts b/packages/desktop/electron.vite.config.ts
+index 2db653a6f3..af65005495 100644
+--- a/packages/desktop/electron.vite.config.ts
++++ b/packages/desktop/electron.vite.config.ts
+@@ -10,6 +10,12 @@ const channel = (() => {
+ 
+ const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
+ 
++const forkhubOwner = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(process.env.FORKHUB_OWNER ?? "")
++  ? (process.env.FORKHUB_OWNER as string).toLowerCase()
++  : "imbios"
++const forkhubBuild = process.env.OPENCODE_FORKHUB_BUILD === "1"
++const forkhubAppId = `ai.opencode.desktop.forkhub.${forkhubOwner}.latest`
++
+ const appPlugin = (await import("@opencode/app/vite")).default
+ const sentry =
+   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
+@@ -59,6 +65,8 @@ export default defineConfig(({ command }) => ({
+     define: {
+       // Local renderer/server mode still uses the dev application identity and updater policy.
+       "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel === "local" ? "dev" : channel),
++      "import.meta.env.OPENCODE_FORKHUB_BUILD": JSON.stringify(forkhubBuild ? "1" : "0"),
++      "import.meta.env.OPENCODE_FORKHUB_APP_ID": JSON.stringify(forkhubAppId),
+     },
+     build: {
+       minify: command === "build",
+diff --git a/packages/desktop/src/main/constants.ts b/packages/desktop/src/main/constants.ts
+index bc33c5bb27..1073d7d6b8 100644
+--- a/packages/desktop/src/main/constants.ts
++++ b/packages/desktop/src/main/constants.ts
+@@ -18,5 +18,12 @@ const appIDs: Record<string, string> = {
+   prod: "ai.opencode.desktop",
+ }
+ // Local renderer/server mode keeps the dev application identity.
+-export const APP_NAME = app.isPackaged ? appNames[CHANNEL] : "OpenCode Dev"
+-export const APP_ID = app.isPackaged ? appIDs[CHANNEL] : "ai.opencode.desktop.dev"
++export const FORKHUB_BUILD = import.meta.env.OPENCODE_FORKHUB_BUILD === "1"
++
++export const FORKHUB_APP_ID =
++  typeof import.meta.env.OPENCODE_FORKHUB_APP_ID === "string" && import.meta.env.OPENCODE_FORKHUB_APP_ID.length > 0
++    ? import.meta.env.OPENCODE_FORKHUB_APP_ID
++    : "ai.opencode.desktop.forkhub.imbios.latest"
++
++export const APP_NAME = FORKHUB_BUILD ? "OpenCode x ForkHub" : app.isPackaged ? appNames[CHANNEL] : "OpenCode Dev"
++export const APP_ID = FORKHUB_BUILD ? FORKHUB_APP_ID : app.isPackaged ? appIDs[CHANNEL] : "ai.opencode.desktop.dev"
+diff --git a/packages/desktop/src/main/env.d.ts b/packages/desktop/src/main/env.d.ts
+index 353119cf06..dccfbf4087 100644
+--- a/packages/desktop/src/main/env.d.ts
++++ b/packages/desktop/src/main/env.d.ts
+@@ -1,6 +1,8 @@
+ interface ImportMetaEnv {
+   readonly OPENCODE_CHANNEL: string
+   readonly OPENCODE_VERSION?: string
++  readonly OPENCODE_FORKHUB_BUILD?: string
++  readonly OPENCODE_FORKHUB_APP_ID?: string
+ }
+ 
+ interface ImportMeta {
+diff --git a/packages/desktop/src/main/ipc-handlers/updater.ts b/packages/desktop/src/main/ipc-handlers/updater.ts
+index be1f8d98af..a8bd008b74 100644
+--- a/packages/desktop/src/main/ipc-handlers/updater.ts
++++ b/packages/desktop/src/main/ipc-handlers/updater.ts
+@@ -13,6 +13,9 @@ export const updaterHandlers = UpdaterRpcs.toLayer(
+       UpdaterUnsubscribe: (_args, context) => updater.unsubscribe(sender(handoff, context).id),
+       UpdaterCheck: () => updater.check,
+       UpdaterInstall: () => updater.install,
++      UpdaterGetTrack: () => updater.getTrack,
++      UpdaterSetTrack: (args) => updater.setTrack(args.track).pipe(Effect.orDie),
++      UpdaterSetForkHubOwner: (args) => updater.setForkHubOwner(args.owner).pipe(Effect.orDie),
+     })
+   }),
+ )
+diff --git a/packages/desktop/src/main/updater/forkhub.test.ts b/packages/desktop/src/main/updater/forkhub.test.ts
+new file mode 100644
+index 0000000000..855c789268
+--- /dev/null
++++ b/packages/desktop/src/main/updater/forkhub.test.ts
+@@ -0,0 +1,31 @@
++import { describe, expect, test } from "bun:test"
++import { FORKHUB_REPO, normalizeForkHubOwner, resolveForkHubFeedConfig } from "./forkhub"
++
++describe("normalizeForkHubOwner", () => {
++  test("accepts valid profile and org names", () => {
++    expect(normalizeForkHubOwner("ImBIOS")).toBe("ImBIOS")
++    expect(normalizeForkHubOwner("  octocat  ")).toBe("octocat")
++  })
++
++  test("rejects invalid names", () => {
++    expect(normalizeForkHubOwner("")).toBeNull()
++    expect(normalizeForkHubOwner("not a name!")).toBeNull()
++    expect(normalizeForkHubOwner("-leading")).toBeNull()
++    expect(normalizeForkHubOwner("x".repeat(40))).toBeNull()
++    expect(normalizeForkHubOwner(42)).toBeNull()
++  })
++})
++
++describe("resolveForkHubFeedConfig", () => {
++  test("resolves github feed for a valid owner", () => {
++    expect(resolveForkHubFeedConfig({ owner: "ImBIOS" })).toEqual({
++      provider: "github",
++      owner: "ImBIOS",
++      repo: FORKHUB_REPO,
++    })
++  })
++
++  test("returns null without a valid owner", () => {
++    expect(resolveForkHubFeedConfig({ owner: "not a name!" })).toBeNull()
++  })
++})
+diff --git a/packages/desktop/src/main/updater/forkhub.ts b/packages/desktop/src/main/updater/forkhub.ts
+new file mode 100644
+index 0000000000..1297e0f234
+--- /dev/null
++++ b/packages/desktop/src/main/updater/forkhub.ts
+@@ -0,0 +1,45 @@
++// ForkHub updater channel: instead of the upstream release feed, a desktop
++// install polls the GitHub Releases of another profile/org's public
++// `.forkhub` catalog repo. The app-side mirror lives in
++// packages/app/src/shell/updates/forkhub.ts; keep the two in sync.
++
++export const FORKHUB_REPO = ".forkhub" as const
++export type ForkHubRepo = typeof FORKHUB_REPO
++
++export type UpdateTrack = "latest" | "forkhub"
++
++export type UpdateTrackInfo = {
++  readonly track: UpdateTrack
++  readonly forkhubOwner: string | null
++  readonly forkhubRepo: ForkHubRepo
++}
++
++const FORKHUB_OWNER_PATTERN = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/
++
++export function normalizeForkHubOwner(raw: unknown): string | null {
++  if (typeof raw !== "string") return null
++  const owner = raw.trim()
++  if (owner.length < 1 || owner.length > 39) return null
++  if (!FORKHUB_OWNER_PATTERN.test(owner)) return null
++  return owner
++}
++
++export function resolveForkHubFeedConfig(input: { owner: string; repo?: ForkHubRepo }): {
++  provider: "github"
++  owner: string
++  repo: string
++} | null {
++  const owner = normalizeForkHubOwner(input.owner)
++  if (!owner) return null
++  const repo = input.repo ?? FORKHUB_REPO
++  if (repo !== FORKHUB_REPO) return null
++  return { provider: "github", owner, repo }
++}
++
++export function forkHubReleasesApiUrl(owner: string): string {
++  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(FORKHUB_REPO)}/releases?per_page=5`
++}
++
++export function forkHubRepoWebUrl(owner: string): string {
++  return `https://github.com/${owner}/${FORKHUB_REPO}/releases`
++}
+diff --git a/packages/desktop/src/main/updater/index.test.ts b/packages/desktop/src/main/updater/index.test.ts
+index 17758792a3..43826acdfd 100644
+--- a/packages/desktop/src/main/updater/index.test.ts
++++ b/packages/desktop/src/main/updater/index.test.ts
+@@ -22,6 +22,7 @@ function setup(input?: {
+ }) {
+   const calls: string[] = []
+   let ready = input?.ready
++  let track: { track: "latest" | "forkhub"; forkhubOwner: string | null } = { track: "latest", forkhubOwner: null }
+   const dependencies: Dependencies = {
+     currentVersion: input?.currentVersion ?? "1.0.0",
+     platform: {
+@@ -54,11 +55,25 @@ function setup(input?: {
+               await input.open?.()
+             })
+         : undefined,
++      setFeedURL: (feed) =>
++        Effect.sync(() => {
++          calls.push("owner" in feed ? `feed:${feed.owner}/${feed.repo}` : `feed:${feed.url}`)
++        }),
++      resetFeed: Effect.sync(() => {
++        calls.push("feed:reset")
++      }),
+       dispose: () => {},
+     },
+     prepareToRestart: Effect.sync(() => {
+       calls.push("prepare")
+     }),
++    trackStore: {
++      get: Effect.sync(() => track),
++      set: (value) =>
++        Effect.sync(() => {
++          track = value
++        }),
++    },
+     persistence: {
+       get: Effect.sync(() => ready),
+       set: (value) =>
+@@ -80,6 +95,9 @@ function setup(input?: {
+     install: () => run((updater) => updater.install),
+     installFork: () => runtime.runFork(Service.pipe(Effect.flatMap((updater) => updater.install))),
+     getState: () => run((updater) => updater.state),
++    getTrack: () => run((updater) => updater.getTrack),
++    setTrack: (track: "latest" | "forkhub") => run((updater) => updater.setTrack(track)),
++    setForkHubOwner: (owner: string) => run((updater) => updater.setForkHubOwner(owner)),
+   }
+   return { updater, calls, getReady: () => ready }
+ }
+@@ -335,4 +353,38 @@ describe("updater", () => {
+     expect(attempts).toBe(2)
+     expect(await app.updater.getState()).toEqual({ status: "installing", version: "2.0.0" })
+   })
++
++  test("defaults to the latest track with no owner", async () => {
++    const app = setup()
++    await app.updater.start()
++
++    expect(await app.updater.getTrack()).toEqual({ track: "latest", forkhubOwner: null, forkhubRepo: ".forkhub" })
++  })
++
++  test("refuses the forkhub track without a validated owner", async () => {
++    const app = setup()
++    await app.updater.start()
++
++    await expect(app.updater.setTrack("forkhub")).rejects.toThrow("ForkHub profile or org")
++  })
++
++  test("repoints the feed when an owner is set on the forkhub track", async () => {
++    const app = setup()
++    await app.updater.start()
++
++    await app.updater.setForkHubOwner("ImBIOS")
++    await app.updater.setTrack("forkhub")
++
++    expect(await app.updater.getTrack()).toEqual({ track: "forkhub", forkhubOwner: "ImBIOS", forkhubRepo: ".forkhub" })
++    expect(app.calls).toContain("feed:ImBIOS/.forkhub")
++  })
++
++  test("rejects invalid owner names without touching the feed", async () => {
++    const app = setup()
++    await app.updater.start()
++    const feeds = app.calls.filter((call) => call.startsWith("feed:"))
++
++    await expect(app.updater.setForkHubOwner("not a name!")).rejects.toThrow("valid GitHub profile")
++    expect(app.calls.filter((call) => call.startsWith("feed:"))).toEqual(feeds)
++  })
+ })
+diff --git a/packages/desktop/src/main/updater/index.ts b/packages/desktop/src/main/updater/index.ts
+index d604228746..7e186529f8 100644
+--- a/packages/desktop/src/main/updater/index.ts
++++ b/packages/desktop/src/main/updater/index.ts
+@@ -5,6 +5,14 @@ import { Context, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+ import type { UpdaterState } from "@opencode/app/updater"
+ import { UpdaterStateChanged } from "../../shared/ipc-rpc/events"
+ import { emitIpcEvent } from "../ipc-events"
++import {
++  FORKHUB_REPO,
++  normalizeForkHubOwner,
++  resolveForkHubFeedConfig,
++  type UpdateTrack,
++  type UpdateTrackInfo,
++} from "./forkhub"
++import type { FeedConfig } from "./platform"
+ 
+ export type UpdateTarget =
+   | { readonly mode: "restart"; readonly version: string }
+@@ -14,6 +22,8 @@ export type Platform = {
+   readonly checkForUpdate: Effect.Effect<UpdateTarget | undefined, unknown>
+   readonly stageUpdate: (options: { readonly differential: boolean }) => Effect.Effect<unknown, unknown>
+   readonly installAndRestart: Effect.Effect<never, unknown>
++    readonly setFeedURL: (feed: FeedConfig) => Effect.Effect<void, unknown>
++    readonly resetFeed: Effect.Effect<void, unknown>
+   readonly externalInstall?: (url: string) => Effect.Effect<void, unknown>
+   readonly dispose: () => void
+ }
+@@ -22,6 +32,10 @@ export type Dependencies = {
+   readonly currentVersion: string
+   readonly platform?: Platform
+   readonly prepareToRestart: Effect.Effect<void, unknown>
++  readonly trackStore: {
++    readonly get: Effect.Effect<{ track: UpdateTrack; forkhubOwner: string | null }, unknown>
++    readonly set: (value: { track: UpdateTrack; forkhubOwner: string | null }) => Effect.Effect<void, unknown>
++  }
+   readonly persistence: {
+     readonly get: Effect.Effect<{ version: string } | undefined, unknown>
+     readonly set: (value: { version: string }) => Effect.Effect<void, unknown>
+@@ -41,6 +55,9 @@ export interface Interface {
+   readonly show: Effect.Effect<void>
+   readonly state: Effect.Effect<UpdaterState>
+   readonly started: Effect.Effect<void>
++  readonly getTrack: Effect.Effect<UpdateTrackInfo>
++  readonly setTrack: (track: UpdateTrack) => Effect.Effect<UpdateTrackInfo, unknown>
++  readonly setForkHubOwner: (owner: string) => Effect.Effect<UpdateTrackInfo, unknown>
+ }
+ 
+ export class Service extends Context.Service<Service, Interface>()("opencode/desktop/Updater") {}
+@@ -49,6 +66,24 @@ export const layerWith = (dependencies: Dependencies) => Layer.effect(Service, m
+ 
+ export const make = Effect.fn("Updater.make")(function* (dependencies: Dependencies) {
+   const runFork = Effect.runForkWith(yield* Effect.context())
++  const applyFeedForTrack = (
++    platform: Platform | undefined,
++    track: UpdateTrack,
++    owner: string | null,
++  ): Effect.Effect<void, unknown> =>
++    Effect.gen(function* () {
++      if (!platform) return
++      if (track !== "forkhub") {
++        yield* platform.resetFeed
++        return
++      }
++      const feed = owner ? resolveForkHubFeedConfig({ owner }) : null
++      if (!feed) {
++        runFork(Effect.logWarning("forkhub track selected without an owner; feed unchanged", { track }))
++        return
++      }
++      yield* platform.setFeedURL(feed)
++    })
+   let state: UpdaterState = dependencies.platform ? { status: "idle" } : { status: "disabled" }
+   let pending: Deferred.Deferred<UpdaterState> | undefined
+   let installing: Deferred.Deferred<void, unknown> | undefined
+@@ -222,6 +257,10 @@ export const make = Effect.fn("Updater.make")(function* (dependencies: Dependenc
+     if (ready?.version === dependencies.currentVersion) yield* dependencies.persistence.clear
+     // Any other persisted target was downloaded by an earlier launch and never installed, so its blockmap is cached.
+     if (ready && ready.version !== dependencies.currentVersion) downloaded = ready.version
++    const stored = yield* dependencies.trackStore.get.pipe(Effect.orElseSucceed((): { track: UpdateTrack; forkhubOwner: string | null } => ({ track: "latest", forkhubOwner: null })))
++    // The latest track is the baked-in default feed; only ForkHub needs a runtime repoint at startup.
++    if (dependencies.platform && stored.track === "forkhub")
++      yield* applyFeedForTrack(dependencies.platform, stored.track, stored.forkhubOwner).pipe(Effect.ignore)
+     yield* check
+   })
+   const unsubscribe = (id: number) => {
+@@ -266,5 +305,46 @@ export const make = Effect.fn("Updater.make")(function* (dependencies: Dependenc
+     show: dependencies.show ? dependencies.show(check, install).pipe(Effect.orDie) : Effect.void,
+     state: Effect.sync(() => state),
+     started: Fiber.join(starting).pipe(Effect.orDie),
++    getTrack: dependencies.trackStore.get.pipe(
++      Effect.orElseSucceed(
++        (): { track: UpdateTrack; forkhubOwner: string | null } => ({ track: "latest", forkhubOwner: null }),
++      ),
++      Effect.map((stored): UpdateTrackInfo => ({ ...stored, forkhubRepo: FORKHUB_REPO })),
++    ),
++    setTrack: (track) =>
++      Effect.gen(function* () {
++        if (track !== "latest" && track !== "forkhub") return yield* Effect.fail(new Error(`Unknown update track: ${track}`))
++        const stored = yield* dependencies.trackStore.get.pipe(
++          Effect.orElseSucceed((): { track: UpdateTrack; forkhubOwner: string | null } => ({ track: "latest", forkhubOwner: null })),
++        )
++        if (track === "forkhub" && !normalizeForkHubOwner(stored.forkhubOwner)) {
++          return yield* Effect.fail(
++            new Error("Set a ForkHub profile or org first: the updater needs to know whose `.forkhub` releases to poll."),
++          )
++        }
++        yield* dependencies.trackStore.set({ track, forkhubOwner: stored.forkhubOwner })
++        if (dependencies.platform) yield* applyFeedForTrack(dependencies.platform, track, stored.forkhubOwner).pipe(Effect.ignore)
++        downloaded = undefined
++        target = undefined
++        yield* Effect.sync(() => transition({ status: "idle" }))
++        yield* check.pipe(Effect.ignore)
++        return { track, forkhubOwner: stored.forkhubOwner, forkhubRepo: FORKHUB_REPO } as UpdateTrackInfo
++      }),
++    setForkHubOwner: (owner) =>
++      Effect.gen(function* () {
++        const normalized = normalizeForkHubOwner(owner)
++        if (!normalized) return yield* Effect.fail(new Error(`Not a valid GitHub profile or org name: ${JSON.stringify(owner)}.`))
++        const stored = yield* dependencies.trackStore.get.pipe(
++          Effect.orElseSucceed((): { track: UpdateTrack; forkhubOwner: string | null } => ({ track: "latest", forkhubOwner: null })),
++        )
++        yield* dependencies.trackStore.set({ track: stored.track, forkhubOwner: normalized })
++        if (stored.track === "forkhub" && dependencies.platform) {
++          yield* applyFeedForTrack(dependencies.platform, "forkhub", normalized).pipe(Effect.ignore)
++          downloaded = undefined
++          target = undefined
++          yield* Effect.sync(() => transition({ status: "idle" }))
++        }
++        return { track: stored.track, forkhubOwner: normalized, forkhubRepo: FORKHUB_REPO } as UpdateTrackInfo
++      }),
+   })
+ })
+diff --git a/packages/desktop/src/main/updater/live.ts b/packages/desktop/src/main/updater/live.ts
+index 828f78d0bf..baa114d7ff 100644
+--- a/packages/desktop/src/main/updater/live.ts
++++ b/packages/desktop/src/main/updater/live.ts
+@@ -7,9 +7,12 @@ import { UPDATER_ENABLED } from "../constants"
+ import { DesktopInitialization } from "../lifecycle/desktop-initialization"
+ import { ApplicationLifecycle } from "../lifecycle"
+ import { nativeT } from "../native/translations"
++import { normalizeForkHubOwner, type UpdateTrack } from "./forkhub"
+ import { make, Service } from "./index"
+ 
+ const key = "ready"
++const trackKey = "track"
++const forkhubOwnerKey = "forkhubOwner"
+ 
+ export const layer = Layer.effect(
+   Service,
+@@ -26,6 +29,20 @@ export const layer = Layer.effect(
+       currentVersion: desktop.version,
+       platform,
+       prepareToRestart: lifecycle.prepareToRestart,
++      trackStore: {
++        get: Effect.sync(() => {
++          const track = desktop.updaterStore.get(trackKey)
++          return {
++            track: (track === "forkhub" ? "forkhub" : "latest") as UpdateTrack,
++            forkhubOwner: normalizeForkHubOwner(desktop.updaterStore.get(forkhubOwnerKey)),
++          }
++        }),
++        set: (value) =>
++          Effect.sync(() => {
++            desktop.updaterStore.set(trackKey, value.track)
++            if (value.forkhubOwner) desktop.updaterStore.set(forkhubOwnerKey, value.forkhubOwner)
++          }),
++      },
+       persistence: {
+         get: Effect.sync(() => {
+           const value = desktop.updaterStore.get(key)
+diff --git a/packages/desktop/src/main/updater/platform.ts b/packages/desktop/src/main/updater/platform.ts
+index 1c4b6f5bee..f5b0c1550b 100644
+--- a/packages/desktop/src/main/updater/platform.ts
++++ b/packages/desktop/src/main/updater/platform.ts
+@@ -11,6 +11,26 @@ const updateClient = pkg.autoUpdater
+ const restartTimeout = 10_000
+ const stableArtifact = "https://opencode.ai/update/api/latest/desktop/opencode"
+ 
++export type FeedConfig =
++  | { provider: "github"; owner: string; repo: string }
++  | { provider: "generic"; url: string; channel: string }
++
++export function defaultFeed(): FeedConfig {
++  if (CHANNEL === "beta")
++    return { provider: "generic", url: "https://opencode.ai/update/api/beta/desktop/opencode/", channel: "latest" }
++  return { provider: "generic", url: "https://opencode.ai/update/api/latest/desktop/opencode/", channel: "latest" }
++}
++
++export const setFeedURL = (feed: FeedConfig): Effect.Effect<void, unknown> =>
++  Effect.tryPromise({
++    try: async () => {
++      updateClient.setFeedURL(feed)
++    },
++    catch: (error) => error,
++  }).pipe(Effect.tap(() => Effect.logInfo("using update feed", feed)))
++
++export const resetFeed: Effect.Effect<void, unknown> = Effect.suspend(() => setFeedURL(defaultFeed()))
++
+ export const make = Effect.gen(function* () {
+   const external = requiresStableMacInstaller(process.platform, CHANNEL)
+   const userAgent = `opencode/${CHANNEL === "prod" ? "latest" : CHANNEL}/${app.getVersion()}/desktop`
+@@ -54,6 +74,8 @@ export const make = Effect.gen(function* () {
+     }),
+     stageUpdate,
+     installAndRestart,
++    setFeedURL: (feed: FeedConfig) => setFeedURL(feed),
++    resetFeed,
+     externalInstall: external ? (url) => openExternalURL(url) : undefined,
+     dispose: () => autoUpdater.off("before-quit-for-update", beforeQuit),
+   } satisfies Platform
+diff --git a/packages/desktop/src/renderer/api-types.ts b/packages/desktop/src/renderer/api-types.ts
+index 29335dbe17..bf289685b6 100644
+--- a/packages/desktop/src/renderer/api-types.ts
++++ b/packages/desktop/src/renderer/api-types.ts
+@@ -19,10 +19,18 @@ import type {
+ import type { PairingInfo } from "../shared/ipc-rpc/app"
+ 
+ export type WslServersAPI = WslServersPlatform
++export type UpdateTrackInfo = {
++  track: "latest" | "forkhub"
++  forkhubOwner: string | null
++  forkhubRepo: ".forkhub"
++}
+ export type UpdaterAPI = {
+   subscribe(cb: (state: UpdaterState) => void): Promise<() => void>
+   check(): Promise<UpdaterState>
+   install(): Promise<void>
++  getTrack(): Promise<UpdateTrackInfo>
++  setTrack(track: "latest" | "forkhub"): Promise<UpdateTrackInfo>
++  setForkHubOwner(owner: string): Promise<UpdateTrackInfo>
+ }
+ 
+ export type ElectronAPI = {
+diff --git a/packages/desktop/src/renderer/api.ts b/packages/desktop/src/renderer/api.ts
+index ca09acb894..158b29c3ae 100644
+--- a/packages/desktop/src/renderer/api.ts
++++ b/packages/desktop/src/renderer/api.ts
+@@ -93,6 +93,9 @@ export const api: ElectronAPI = {
+     },
+     check: () => invoke("UpdaterCheck"),
+     install: () => invoke("UpdaterInstall"),
++    getTrack: () => invoke("UpdaterGetTrack"),
++    setTrack: (track: "latest" | "forkhub") => invoke("UpdaterSetTrack", { track }),
++    setForkHubOwner: (owner: string) => invoke("UpdaterSetForkHubOwner", { owner }),
+   },
+   consumeInitialDeepLinks: () => invoke("AppConsumeInitialDeepLinks").then(mutable),
+   getDefaultServerUrl: () => invoke("AppGetDefaultServerUrl"),
+diff --git a/packages/desktop/src/renderer/platform/updater.ts b/packages/desktop/src/renderer/platform/updater.ts
+index cdba497b3e..54b2b7812c 100644
+--- a/packages/desktop/src/renderer/platform/updater.ts
++++ b/packages/desktop/src/renderer/platform/updater.ts
+@@ -9,5 +9,8 @@ export function startDesktopUpdater(api: ElectronAPI): UpdaterPlatform {
+     state,
+     check: () => api.updater.check(),
+     install: () => api.updater.install(),
++    getTrack: () => api.updater.getTrack(),
++    setTrack: (track) => api.updater.setTrack(track),
++    setForkHubOwner: (owner) => api.updater.setForkHubOwner(owner),
+   }
+ }
+diff --git a/packages/desktop/src/shared/ipc-rpc/updater.ts b/packages/desktop/src/shared/ipc-rpc/updater.ts
+index bc9e601be0..bdc7c4f7e1 100644
+--- a/packages/desktop/src/shared/ipc-rpc/updater.ts
++++ b/packages/desktop/src/shared/ipc-rpc/updater.ts
+@@ -13,8 +13,33 @@ export const UpdaterStateSchema = Schema.Union([
+   Schema.Struct({ status: Schema.Literal("error"), message: Schema.String }),
+ ])
+ 
++export const UpdateTrackSchema = Schema.Literals(["latest", "forkhub"])
++
++export const UpdateTrackInfoSchema = Schema.Struct({
++  track: UpdateTrackSchema,
++  forkhubOwner: Schema.NullOr(Schema.String),
++  forkhubRepo: Schema.Literal(".forkhub"),
++})
++
+ export const UpdaterSubscribe = Rpc.make("UpdaterSubscribe")
+ export const UpdaterUnsubscribe = Rpc.make("UpdaterUnsubscribe")
+ export const UpdaterCheck = Rpc.make("UpdaterCheck", { success: UpdaterStateSchema })
+ export const UpdaterInstall = Rpc.make("UpdaterInstall")
+-export const UpdaterRpcs = RpcGroup.make(UpdaterSubscribe, UpdaterUnsubscribe, UpdaterCheck, UpdaterInstall)
++export const UpdaterGetTrack = Rpc.make("UpdaterGetTrack", { success: UpdateTrackInfoSchema })
++export const UpdaterSetTrack = Rpc.make("UpdaterSetTrack", {
++  payload: { track: UpdateTrackSchema },
++  success: UpdateTrackInfoSchema,
++})
++export const UpdaterSetForkHubOwner = Rpc.make("UpdaterSetForkHubOwner", {
++  payload: { owner: Schema.String },
++  success: UpdateTrackInfoSchema,
++})
++export const UpdaterRpcs = RpcGroup.make(
++  UpdaterSubscribe,
++  UpdaterUnsubscribe,
++  UpdaterCheck,
++  UpdaterInstall,
++  UpdaterGetTrack,
++  UpdaterSetTrack,
++  UpdaterSetForkHubOwner,
++)

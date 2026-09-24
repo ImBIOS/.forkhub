@@ -1,0 +1,1 @@
+{"apply_order":["opencode-forkhub-update-track-ddcd8fe1"],"is_fork":true,"on_budget_exceed":"pause","patches":["opencode-forkhub-update-track-ddcd8fe1"],"schedule":"on-upstream-release","slug_aliases":{},"target_repo":"github.com/anomalyco/opencode","token_budget_per_run":500000,"upstream_main_branch":"dev","upstream_remote":"upstream","fork_remote":"origin"}

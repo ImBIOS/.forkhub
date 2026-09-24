@@ -1,0 +1,1 @@
+{"fork_remote":"origin","fork_url":"https://github.com/ImBIOS/opencode.git","last_known_upstream_sha":"0f549842ee","last_synced_at":"2026-09-24T00:00:00.000Z","schedule":"on-upstream-release","tag_match_pattern":"^v[0-9]+\\.[0-9]+\\.[0-9]+$","upstream_main_branch":"dev","upstream_remote":"upstream","upstream_url":"https://github.com/anomalyco/opencode.git"}

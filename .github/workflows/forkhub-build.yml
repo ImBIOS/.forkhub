@@ -131,7 +131,7 @@ jobs:
           elif [ "$UP" = "v0.0.0" ]; then
             echo "no upstream tag; building branch fallback"
           else
-            TAGS=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq -r '.[].tagName')
+            TAGS=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
             if printf '%s\n' "$TAGS" | grep -qxF "$UP"; then
               echo "$UP already has an updater release; skipping"
               SKIP="true"

@@ -13,8 +13,8 @@ TAG="${UPSTREAM_TAG:?}"
 VER=$(printf '%s' "$TAG" | sed 's/^v//')
 
 case "$VER" in
-  *nightly* | *preview* | *pr.*)
-    echo "not a release train tag ($TAG); skipping updater publish"
+  *preview* | *pr.*)
+    echo "not a shippable train tag ($UPSTREAM_TAG); skipping updater publish"
     exit 0
     ;;
 esac

@@ -37,8 +37,8 @@ fail_soft() {
 
 VER=$(printf '%s' "$TAG" | sed 's/^v//')
 case "$VER" in
-  *nightly* | *preview* | *pr.*)
-    fail_soft "UPSTREAM_TAG=$TAG is not a release train tag; refusing to cut a ForkHub release from it."
+  *preview* | *pr.*)
+    fail_soft "UPSTREAM_TAG=$TAG is a preview/PR train tag, not a shippable train; refusing to cut a ForkHub release from it."
     ;;
 esac
 

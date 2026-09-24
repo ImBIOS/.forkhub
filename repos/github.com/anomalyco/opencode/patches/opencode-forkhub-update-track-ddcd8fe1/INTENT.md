@@ -5,7 +5,7 @@ target_repo: github.com/anomalyco/opencode
 target_area: [packages/desktop/src/main/updater/forkhub.ts, packages/desktop/src/main/updater/index.ts, packages/desktop/src/main/updater/live.ts, packages/desktop/src/main/updater/platform.ts, packages/desktop/src/main/updater/index.test.ts, packages/desktop/src/main/ipc-handlers/updater.ts, packages/desktop/src/main/constants.ts, packages/desktop/src/main/env.d.ts, packages/desktop/src/shared/ipc-rpc/updater.ts, packages/desktop/src/renderer/api.ts, packages/desktop/src/renderer/api-types.ts, packages/desktop/src/renderer/platform/updater.ts, packages/desktop/electron-builder.config.ts, packages/desktop/electron.vite.config.ts, packages/app/src/shell/updates/forkhub.ts, packages/app/src/shell/updates/types.ts, packages/app/src/settings/general/general.tsx, packages/app/src/shell/titlebar/titlebar.tsx, packages/app/src/runtime/i18n/en.ts]
 status: applied
 applied_upstream_pr: none
-version: 5
+version: 6
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -131,3 +131,5 @@ never mistaken for stock.
 - v4 makes the titlebar badge re-poll the track (15s) so it appears without restart.
 
 - v5 re-polls the Settings track select on the same cadence.
+
+- v6 renders the ForkHub badge on all channels (beta builds fell through to the stock badge).

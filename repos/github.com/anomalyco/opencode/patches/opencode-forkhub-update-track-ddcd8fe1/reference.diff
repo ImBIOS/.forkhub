@@ -231,7 +231,7 @@ index 42570f0dba..f27d45a204 100644
    return (
      <>
 diff --git a/packages/app/src/shell/titlebar/titlebar.tsx b/packages/app/src/shell/titlebar/titlebar.tsx
-index 6c35244335..89a4b87af5 100644
+index 6c35244335..7ac5de6e95 100644
 --- a/packages/app/src/shell/titlebar/titlebar.tsx
 +++ b/packages/app/src/shell/titlebar/titlebar.tsx
 @@ -1,4 +1,4 @@
@@ -240,7 +240,7 @@ index 6c35244335..89a4b87af5 100644
  import { createStore, unwrap } from "solid-js/store"
  import { Dynamic, Portal } from "solid-js/web"
  import { useLocation, useNavigate } from "@solidjs/router"
-@@ -792,10 +792,33 @@ function ChannelIndicator(props: {
+@@ -792,12 +792,38 @@ function ChannelIndicator(props: {
    const language = useLanguage()
    const platform = usePlatform()
    const channel = import.meta.env.VITE_OPENCODE_CHANNEL
@@ -257,24 +257,37 @@ index 6c35244335..89a4b87af5 100644
 +    onCleanup(() => clearInterval(timer))
 +  })
 +  const forkhub = () => trackInfo()?.track === "forkhub"
++  const forkhubBadge = () => (
++    <Show when={forkhub()}>
++      <div
++        data-slot="channel-indicator"
++        data-forkhub="true"
++        class="flex h-7 shrink-0 items-center rounded-[6px] bg-icon-interactive-base px-2 font-mono text-[#FFF] [app-region:no-drag]"
++      >
++        x ForkHub
++      </div>
++    </Show>
++  )
 +  if ((!channel || channel === "prod") && !forkhub()) return null
  
    const label = () => language.t(`titlebar.channel.${channel}`)
    const debug = () => (channel === "dev" || channel === "local" ? props.debugTools : undefined)
-+  if (!channel || channel === "prod")
-+    return (
-+      <Show when={forkhub()}>
-+        <div
-+          data-slot="channel-indicator"
-+          class="flex h-7 shrink-0 items-center rounded-[6px] bg-icon-interactive-base px-2 font-mono text-[#FFF] [app-region:no-drag]"
-+        >
-+          x ForkHub
-+        </div>
-+      </Show>
-+    )
++  if (!channel || channel === "prod") return <>{forkhubBadge()}</>
    return (
-     <Tooltip
+-    <Tooltip
++    <>
++      {forkhubBadge()}
++      <Tooltip
        placement={props.sidebar ? "right" : "bottom"}
+       value={label()}
+       class={`shrink-0 [app-region:no-drag] ${props.sidebar ? "mb-4 ms-0.5 self-start" : ""} ${props.horizontal ? "me-1.5" : ""} ${props.horizontal && platform.platform === "web" ? "ps-2.5" : ""}`}
+@@ -826,5 +852,6 @@ function ChannelIndicator(props: {
+         />
+       </Dynamic>
+     </Tooltip>
++    </>
+   )
+ }
 diff --git a/packages/app/src/shell/updates/forkhub.test.ts b/packages/app/src/shell/updates/forkhub.test.ts
 new file mode 100644
 index 0000000000..53fdae1ab7

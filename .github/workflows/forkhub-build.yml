@@ -132,10 +132,14 @@ jobs:
             echo "no upstream tag; building branch fallback"
           else
             TAGS=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
+            # The updater release is the channel feed: a target with a
+            # publish hook is only done when IT exists. Hook-less targets
+            # are done with the bundle alone.
             if printf '%s\n' "$TAGS" | grep -qxF "$UP"; then
               echo "$UP already has an updater release; skipping"
               SKIP="true"
-            elif printf '%s\n' "$TAGS" | grep -qF "$SLUG-$UP-fh"; then
+            elif [ ! -f "forkhub/repos/${{ matrix.target }}/build/publish.sh" ] \
+              && printf '%s\n' "$TAGS" | grep -qF "$SLUG-$UP-fh"; then
               echo "$UP already has a bundle release; skipping"
               SKIP="true"
             else

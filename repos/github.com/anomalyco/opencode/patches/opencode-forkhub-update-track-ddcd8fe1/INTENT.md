@@ -5,7 +5,7 @@ target_repo: github.com/anomalyco/opencode
 target_area: [packages/desktop/src/main/updater/forkhub.ts, packages/desktop/src/main/updater/index.ts, packages/desktop/src/main/updater/live.ts, packages/desktop/src/main/updater/platform.ts, packages/desktop/src/main/updater/index.test.ts, packages/desktop/src/main/ipc-handlers/updater.ts, packages/desktop/src/main/constants.ts, packages/desktop/src/main/env.d.ts, packages/desktop/src/shared/ipc-rpc/updater.ts, packages/desktop/src/renderer/api.ts, packages/desktop/src/renderer/api-types.ts, packages/desktop/src/renderer/platform/updater.ts, packages/desktop/electron-builder.config.ts, packages/desktop/electron.vite.config.ts, packages/app/src/shell/updates/forkhub.ts, packages/app/src/shell/updates/types.ts, packages/app/src/settings/general/general.tsx, packages/app/src/shell/titlebar/titlebar.tsx, packages/app/src/runtime/i18n/en.ts]
 status: applied
 applied_upstream_pr: none
-version: 3
+version: 4
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -104,7 +104,9 @@ never mistaken for stock.
   `settings.updates.forkhub.*`, `settings.updates.toast.forkhub.*`).
 - `ChannelIndicator` (`shell/titlebar/titlebar.tsx`) renders an "x
   ForkHub" badge whenever the ForkHub track is active, including on prod
-  builds where the stock channel badge is hidden.
+  builds where the stock channel badge is hidden. The badge re-polls the
+  track every 15s so it appears without an app restart after switching
+  tracks in Settings.
 - `electron-builder.config.ts`: `OPENCODE_FORKHUB_BUILD=1` with
   `FORKHUB_OWNER` (default `imbios`) overrides app id / product name /
   publish (`owner/.forkhub`, overridable via
@@ -125,3 +127,5 @@ never mistaken for stock.
   clean to pristine `v2.0.16` (`git apply --check`).
 
 - v3 switches the base to beta (`OPENCODE_CHANNEL=beta`, `FORKHUB_BASE=beta`, npm tag `beta`).
+
+- v4 makes the titlebar badge re-poll the track (15s) so it appears without restart.

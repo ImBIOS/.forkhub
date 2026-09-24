@@ -224,19 +224,31 @@ index 42570f0dba..3dcac23732 100644
    return (
      <>
 diff --git a/packages/app/src/shell/titlebar/titlebar.tsx b/packages/app/src/shell/titlebar/titlebar.tsx
-index 6c35244335..6c4abe51d5 100644
+index 6c35244335..89a4b87af5 100644
 --- a/packages/app/src/shell/titlebar/titlebar.tsx
 +++ b/packages/app/src/shell/titlebar/titlebar.tsx
-@@ -792,10 +792,27 @@ function ChannelIndicator(props: {
+@@ -1,4 +1,4 @@
+-import { createEffect, createMemo, createResource, Match, Show, Switch, untrack } from "solid-js"
++import { createEffect, createMemo, createResource, Match, onCleanup, Show, Switch, untrack } from "solid-js"
+ import { createStore, unwrap } from "solid-js/store"
+ import { Dynamic, Portal } from "solid-js/web"
+ import { useLocation, useNavigate } from "@solidjs/router"
+@@ -792,10 +792,33 @@ function ChannelIndicator(props: {
    const language = useLanguage()
    const platform = usePlatform()
    const channel = import.meta.env.VITE_OPENCODE_CHANNEL
 -  if (!channel || channel === "prod") return null
-+  const [trackInfo] = createResource(
++  const [trackInfo, { refetch: refetchTrack }] = createResource(
 +    () => platform.updater?.getTrack?.(),
 +    (promise) => promise.catch(() => undefined),
 +    { initialValue: undefined },
 +  )
++  // The track can change from Settings after this mounts; re-poll so the
++  // ForkHub badge appears without an app restart.
++  createEffect(() => {
++    const timer = setInterval(() => void refetchTrack(), 15000)
++    onCleanup(() => clearInterval(timer))
++  })
 +  const forkhub = () => trackInfo()?.track === "forkhub"
 +  if ((!channel || channel === "prod") && !forkhub()) return null
  
@@ -367,6 +379,21 @@ index b7209d8522..c7f775b675 100644
 +  setTrack?(track: UpdateTrack): Promise<UpdateTrackInfo>
 +  setForkHubOwner?(owner: string): Promise<UpdateTrackInfo>
  }
+diff --git a/packages/cli/package.json b/packages/cli/package.json
+index 573a701139..e4edcd6ca6 100644
+--- a/packages/cli/package.json
++++ b/packages/cli/package.json
+@@ -27,9 +27,9 @@
+     "@agentclientprotocol/sdk": "1.2.1",
+     "@clack/prompts": "1.0.0-alpha.1",
+     "@effect/platform-node": "catalog:",
++    "@opencode-ai/pty": "0.1.13",
+     "@opencode/client": "workspace:*",
+     "@opencode/plugin": "workspace:*",
+-    "@opencode-ai/pty": "0.1.13",
+     "@opencode/schema": "workspace:*",
+     "@opencode/server": "workspace:*",
+     "@opencode/tui": "workspace:*",
 diff --git a/packages/desktop/electron-builder.config.ts b/packages/desktop/electron-builder.config.ts
 index 3cb1302ee8..edf4c77ba5 100644
 --- a/packages/desktop/electron-builder.config.ts

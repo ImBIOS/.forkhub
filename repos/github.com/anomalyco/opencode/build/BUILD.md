@@ -11,9 +11,10 @@ only (see `upstream.json:tag_match_pattern`).
    upstream version 1:1 (switching tracks at the same version needs one
    hand-install; later ForkHub releases then flow automatically).
 2. Installs workspace deps (`bun install`, lockfile-pinned).
-3. Builds the **CLI** (`packages/cli`) first and exports
-   `OPENCODE_CLI_DIST` — v2 prod desktop builds bundle the locally built
-   CLI (`prebuild.ts` refuses prod without it).
+3. Builds the **CLI** (`packages/cli`, `OPENCODE_CHANNEL=beta`) first and
+   exports `OPENCODE_CLI_DIST` — v2 prod desktop builds bundle the locally
+   built CLI (`prebuild.ts` refuses prod without it). The CLI's baked
+   channel is beta (user-agent `opencode/beta/<ver>/cli`).
 4. Builds the **Linux x64 AppImage, unsigned**, with:
    - `OPENCODE_CHANNEL=beta` (beta base),
    - `OPENCODE_FORKHUB_BUILD=1` + `FORKHUB_OWNER=imbios` → app id
@@ -26,9 +27,10 @@ only (see `upstream.json:tag_match_pattern`).
      AppImage-first like upstream's portable story.
 4. Copies the produced artifacts (AppImage, `latest-linux.yml`, blockmap)
    plus CLI archives into `$GITHUB_WORKSPACE/dist`.
-5. Tries `npm publish` of `@imbios/with-fh-opencode-ai` with tag `latest`
-   when `NPM_TOKEN` is present; otherwise stages an `npm pack` tarball so
-   the bundle release still carries the CLI.
+5. Tries `npm publish` of `@imbios/with-fh-opencode-ai` with tag `beta`
+   when `NPM_TOKEN` is present (the package ships the linux-x64 standalone
+   binary directly — no workspace deps); otherwise stages an `npm pack`
+   tarball so the bundle release still carries the CLI.
 6. Never fails the job: on any failure it packs a patched-source tarball
    and exits 0. Empty `dist/` falls back to the shared patched-source
    tarball; the updater release is skipped by `publish.sh` when no

@@ -46,7 +46,7 @@ bun install >>"$LOG" 2>&1 || fail_soft "bun install failed"
 mkdir -p "$DIST/forkhub"
 
 say "building CLI first (prod desktop bundles it via OPENCODE_CLI_DIST)"
-(cd packages/cli && bun run build >>"$LOG" 2>&1) \
+(cd packages/cli && OPENCODE_VERSION="$VER" OPENCODE_CHANNEL=beta bun run build >>"$LOG" 2>&1) \
   && say "cli build ok" \
   || fail_soft "cli build failed"
 export OPENCODE_CLI_DIST="$PWD/packages/cli/dist"
@@ -77,16 +77,25 @@ say "updater artifacts:$FOUND"
 
 say "staging ForkHub CLI npm package"
 if [ -f packages/cli/package.json ]; then
-  rm -rf "$DIST/forkhub/cli-pkg" && mkdir -p "$DIST/forkhub/cli-pkg"
-  cp -r packages/cli/dist "$DIST/forkhub/cli-pkg/dist" 2>/dev/null || true
-  cp packages/cli/package.json "$DIST/forkhub/cli-pkg/package.json"
-  (cd "$DIST/forkhub/cli-pkg" && node -e "
+  rm -rf "$DIST/forkhub/cli-pkg" && mkdir -p "$DIST/forkhub/cli-pkg/bin"
+  # Linux-only standalone binary (CI builds linux only); the .cjs entries
+  # need workspace deps, so ship the compiled binary directly instead.
+  cp packages/cli/dist/cli-linux-x64/bin/opencode "$DIST/forkhub/cli-pkg/bin/opencode" 2>/dev/null \
+    && chmod +x "$DIST/forkhub/cli-pkg/bin/opencode" \
+    && say "cli binary staged" \
+    || say "cli binary missing; npm package will carry metadata only"
+  (cd "$DIST/forkhub/cli-pkg" && VERSION="$VER" node -e "
 const fs = require('fs');
-const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-pkg.name = '@imbios/with-fh-opencode-ai';
-delete pkg.private;
+const pkg = {
+  name: '@imbios/with-fh-opencode-ai',
+  version: process.env.VERSION,
+  license: 'MIT',
+  type: 'module',
+  bin: { opencode: './bin/opencode' },
+  files: ['bin'],
+};
 fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-") >>"$LOG" 2>&1 || say "cli package rename failed; continuing"
+") >>"$LOG" 2>&1 || say "cli package manifest failed; continuing"
   if [ -n "${NPM_TOKEN:-}" ]; then
     say "publishing @imbios/with-fh-opencode-ai@beta to npm"
     (cd "$DIST/forkhub/cli-pkg" && \

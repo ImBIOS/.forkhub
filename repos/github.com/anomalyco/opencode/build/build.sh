@@ -98,6 +98,9 @@ fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
   fi
   (cd "$DIST/forkhub/cli-pkg" && npm pack >>"$LOG" 2>&1) || say "npm pack failed"
   cp "$DIST"/forkhub/cli-pkg/*.tgz "$DIST/" 2>/dev/null || true
+  # The shared checksum step (`sha256sum *`) chokes on directories — never
+  # leave the staging dir behind.
+  rm -rf "$DIST/forkhub" 2>/dev/null || true
 fi
 
 say "ForkHub build done"

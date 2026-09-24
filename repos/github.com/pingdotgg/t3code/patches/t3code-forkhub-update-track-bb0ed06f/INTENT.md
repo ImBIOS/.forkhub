@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts]
 status: applied
 applied_upstream_pr: none
-version: 1
+version: 2
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -93,6 +93,10 @@ patched install is never mistaken for stock.
 - `resolveGitHubPublishConfig` accepts `"forkhub"` (release-type publish);
   `resolveDesktopProductName` returns "T3 Code x ForkHub" under
   `T3CODE_FORKHUB_BUILD=1` so CI builds (`build/build.sh`) brand correctly.
+- Built versions are `<upstream>.fh.<owner>.<n>` (see `build/BUILD.md`):
+  the app's channel patterns treat suffixed nightlies as nightly for
+  manifests/icons/defaults, while `isVersionAllowedOnUpdateChannel`
+  installs suffixed builds only on ForkHub — stock tracks never touch them.
 - CLI (`t3 update`) is intentionally untouched: custom CLI origins already
   work via `T3CODE_RELEASE_BASE_URL`; a ForkHub CLI channel needs standard
   `v<version>` tags with CLI archives in the catalog repo (see `build/BUILD.md`).

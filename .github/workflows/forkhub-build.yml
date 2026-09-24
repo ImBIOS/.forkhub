@@ -115,9 +115,12 @@ jobs:
           echo "UPSTREAM_TAG=$(cat upstream_tag.txt)" >> "$GITHUB_ENV"
 
       - name: Skip tags that already have a build
-        # Daily cron is a check, not a rebuild: a tag with any release
-        # (updater `v<tag>` or namespaced bundle) is done. workflow_dispatch
-        # with force=true rebuilds anyway.
+        # Daily cron is a check, not a rebuild. A target is done when its
+        # updater release exists: the legacy `v<tag>` form, or — when
+        # upstream.json:version_suffix is set — the provenance
+        # `v<tag>.<suffix>.<owner>.<n>` form. Hook-less targets are done
+        # with the bundle alone. workflow_dispatch with force=true
+        # rebuilds anyway.
         id: skip-check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -125,6 +128,15 @@ jobs:
           set -euo pipefail
           UP="$UPSTREAM_TAG"
           SLUG=$(echo "${{ matrix.target }}" | awk -F/ '{print $(NF-1)"-"$NF}' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')
+          UJSON="$GITHUB_WORKSPACE/forkhub/repos/${{ matrix.target }}/upstream.json"
+          SUFFIX=$(jq -r '.version_suffix // empty' "$UJSON")
+          case "$SUFFIX" in
+            "" | *[!a-z0-9-]*)
+              [ -z "$SUFFIX" ] || echo "::warning::ignoring invalid version_suffix '$SUFFIX'"
+              SUFFIX=""
+              ;;
+          esac
+          echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
           SKIP="false"
           if [ "${{ inputs.force }}" = "true" ]; then
             echo "forced rebuild of $UP"
@@ -132,10 +144,12 @@ jobs:
             echo "no upstream tag; building branch fallback"
           else
             TAGS=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
-            # The updater release is the channel feed: a target with a
-            # publish hook is only done when IT exists. Hook-less targets
-            # are done with the bundle alone.
-            if printf '%s\n' "$TAGS" | grep -qxF "$UP"; then
+            BASE=$(printf '%s' "$UP" | sed 's/^v//;s/\./\\./g')
+            if [ -n "$SUFFIX" ] \
+              && printf '%s\n' "$TAGS" | grep -qE "^v${BASE}\\.${SUFFIX}\\.[a-z0-9-]+\\.[0-9]+\$"; then
+              echo "$UP already has a $SUFFIX updater release; skipping"
+              SKIP="true"
+            elif [ -z "$SUFFIX" ] && printf '%s\n' "$TAGS" | grep -qxF "$UP"; then
               echo "$UP already has an updater release; skipping"
               SKIP="true"
             elif [ ! -f "forkhub/repos/${{ matrix.target }}/build/publish.sh" ] \
@@ -177,6 +191,9 @@ jobs:
 
       - name: Repo-native build (or source tarball fallback)
         if: steps.skip-check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORKHUB_VERSION_SUFFIX: ${{ steps.skip-check.outputs.suffix }}
         run: |
           set -euo pipefail
           FH="$GITHUB_WORKSPACE/forkhub"

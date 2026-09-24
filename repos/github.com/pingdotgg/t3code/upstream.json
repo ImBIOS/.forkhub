@@ -7,5 +7,6 @@
   "last_known_upstream_sha": "78af372",
   "last_synced_at": "2026-09-24T00:00:00.000Z",
   "schedule": "on-upstream-release",
-  "tag_match_pattern": "-nightly\\.[0-9]{8}\\."
+  "tag_match_pattern": "-nightly\\.[0-9]{8}\\.",
+  "version_suffix": "fh"
 }

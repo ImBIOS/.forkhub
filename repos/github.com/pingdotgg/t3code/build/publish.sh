@@ -10,11 +10,17 @@ set -eu
 DIST="${DIST:?}"
 REPO="${GITHUB_REPOSITORY:?}"
 TAG="${UPSTREAM_TAG:?}"
-VER=$(printf '%s' "$TAG" | sed 's/^v//')
+# build.sh exports FORKHUB_VERSION (<upstream>.fh.<owner>.<n>); fall back to
+# the bare upstream version when publishing by hand.
+if [ -n "${FORKHUB_VERSION:-}" ]; then
+  VER="$FORKHUB_VERSION"
+else
+  VER=$(printf '%s' "$TAG" | sed 's/^v//')
+fi
 
 case "$VER" in
   *preview* | *pr.*)
-    echo "not a shippable train tag ($UPSTREAM_TAG); skipping updater publish"
+    echo "not a shippable train tag ($VER); skipping updater publish"
     exit 0
     ;;
 esac
@@ -38,5 +44,6 @@ if gh release view "v$VER" --repo "$REPO" >/dev/null 2>&1; then
 else
   echo "creating updater release v$VER"
   # shellcheck disable=SC2086
-  gh release create "v$VER" $FILES --repo "$REPO" --title "T3 Code x ForkHub v$VER" --notes "ForkHub (patched) build of upstream pingdotgg/t3code v$VER. The matching pingdotgg-t3code-v$VER-fh* release carries the full bundle notes."
+  # shellcheck disable=SC2086
+  gh release create "v$VER" $FILES --repo "$REPO" --title "T3 Code x ForkHub v$VER" --notes "ForkHub (patched) build of upstream pingdotgg/t3code $TAG. The matching pingdotgg-t3code-$TAG-fh* release carries the full bundle notes."
 fi

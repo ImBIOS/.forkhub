@@ -22,7 +22,11 @@
 5. **Update-all nudge**: the downloaded-update toast and the install
    confirmation both tell the user to bring connected servers to the same
    version with Update all.
-6. **Focused suites pass**: `verify.sh` exits 0. No repo-wide checks.
+6. **Provenance version**: built versions carry
+   `<upstream>.fh.<owner>.<n>` (e.g.
+   `0.0.43-nightly.20260924.2187.fh.imbios.1`); stock tracks refuse
+   suffixed builds, ForkHub installs them.
+7. **Focused suites pass**: `verify.sh` exits 0. No repo-wide checks.
 
 ## How to verify
 

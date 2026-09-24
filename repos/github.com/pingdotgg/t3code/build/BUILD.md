@@ -37,11 +37,15 @@ polls. The shared workflow step separately publishes the namespaced
 `pingdotgg-t3code-v<ver>-fh<N>` bundle release (human-facing, carries
 `CONSUME.md`).
 
-Keeping the upstream version (no `+fh` suffix) means a ForkHub install
-compares versions 1:1 with upstream: switching tracks at the same version
-needs one hand-install; later ForkHub releases then flow automatically.
+Versions are `<upstream>.fh.<owner>.<n>` (suffix from
+`upstream.json:version_suffix`, owner from the catalog repo, `n` counting
+existing updater releases so force-rebuilds advance). The prerelease
+extension keeps train ordering (nightly dates still compare) while
+advertising the fork — and it reads as an upgrade over the same-base
+upstream build, so switching tracks offers the ForkHub build.
 Nightly-based ForkHub builds install on the ForkHub track because the app
-allows prereleases there (`allowPrerelease`, like the nightly track).
+allows prereleases there (`allowPrerelease`, like the nightly track);
+stock tracks refuse suffixed builds outright.
 
 electron-builder names updater manifests after the version's channel, so a
 nightly build emits `nightly-*.yml` only — but the ForkHub track polls the

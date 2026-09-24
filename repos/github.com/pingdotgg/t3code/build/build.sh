@@ -42,7 +42,27 @@ case "$VER" in
     ;;
 esac
 
-say "# ForkHub build: github.com/pingdotgg/t3code @ $TAG (as $VER)"
+# ForkHub provenance version: <upstream>.<suffix>.<owner>.<n>, e.g.
+# 0.0.43-nightly.20260924.2187.fh.imbios.1. The prerelease extension keeps
+# train ordering (nightly dates still compare) while advertising the fork;
+# stock tracks refuse suffixed builds outright (see
+# isVersionAllowedOnUpdateChannel). n counts existing updater releases for
+# this base so force-rebuilds advance. The suffix rides in from
+# upstream.json:version_suffix via FORKHUB_VERSION_SUFFIX.
+SUFFIX="${FORKHUB_VERSION_SUFFIX:-fh}"
+case "$SUFFIX" in
+  "" | *[!a-z0-9-]*)
+    fail_soft "bad FORKHUB_VERSION_SUFFIX '$SUFFIX'"
+    ;;
+esac
+OWNER=$(printf '%s' "$REPO" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')
+ESCAPED_BASE=$(printf '%s' "$VER" | sed 's/\./\\./g')
+EXISTING_TAGS=$(gh api "repos/$REPO/releases?per_page=100" --jq '.[].tag_name' 2>/dev/null) \
+  || fail_soft "could not list releases to number the ForkHub build (gh api failed)"
+N=$(printf '%s\n' "$EXISTING_TAGS" | grep -cE "^v${ESCAPED_BASE}\\.${SUFFIX}\\.${OWNER}\\.[0-9]+\$" || true)
+FH_VERSION="${VER}.${SUFFIX}.${OWNER}.$((N + 1))"
+echo "FORKHUB_VERSION=$FH_VERSION" >> "${GITHUB_ENV:?}"
+say "# ForkHub build: github.com/pingdotgg/t3code @ $TAG (as $FH_VERSION)"
 
 # --- toolchain: node ^24.13.1 ---
 HAVE_NODE=$(node --version 2>/dev/null | sed 's/^v//') || HAVE_NODE=""
@@ -93,7 +113,7 @@ export T3CODE_DESKTOP_UPDATE_REPOSITORY="$REPO"
 say "product=T3 Code x ForkHub update_repo=$REPO"
 
 mkdir -p "$DIST/forkhub"
-if node scripts/build-desktop-artifact.ts --platform linux --target AppImage --arch x64 --build-version "$VER" --output-dir "$DIST/forkhub" --verbose >>"$LOG" 2>&1; then
+if node scripts/build-desktop-artifact.ts --platform linux --target AppImage --arch x64 --build-version "$FH_VERSION" --output-dir "$DIST/forkhub" --verbose >>"$LOG" 2>&1; then
   say "artifact build ok"
 else
   say "--- tail of failed artifact build ---"

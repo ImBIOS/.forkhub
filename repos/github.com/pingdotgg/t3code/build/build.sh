@@ -56,11 +56,19 @@ case "$SUFFIX" in
     ;;
 esac
 OWNER=$(printf '%s' "$REPO" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')
+# Joiner keeps the version valid semver: a base that already has a
+# prerelease part (nightly) extends it with a dot, a bare base (stable)
+# needs the dash — electron-builder mangles invalid versions
+# (0.0.42.fh.imbios.1 once shipped as 0.0.4-2.fh.imbios.1).
+case "$VER" in
+  *-*) JOINER="." ;;
+  *) JOINER="-" ;;
+esac
 ESCAPED_BASE=$(printf '%s' "$VER" | sed 's/\./\\./g')
 EXISTING_TAGS=$(gh api "repos/$REPO/releases?per_page=100" --jq '.[].tag_name' 2>/dev/null) \
   || fail_soft "could not list releases to number the ForkHub build (gh api failed)"
-N=$(printf '%s\n' "$EXISTING_TAGS" | grep -cE "^v${ESCAPED_BASE}\\.${SUFFIX}\\.${OWNER}\\.[0-9]+\$" || true)
-FH_VERSION="${VER}.${SUFFIX}.${OWNER}.$((N + 1))"
+N=$(printf '%s\n' "$EXISTING_TAGS" | grep -cE "^v${ESCAPED_BASE}[-.]${SUFFIX}\\.${OWNER}\\.[0-9]+\$" || true)
+FH_VERSION="${VER}${JOINER}${SUFFIX}.${OWNER}.$((N + 1))"
 echo "FORKHUB_VERSION=$FH_VERSION" >> "${GITHUB_ENV:?}"
 say "# ForkHub build: github.com/pingdotgg/t3code @ $TAG (as $FH_VERSION)"
 

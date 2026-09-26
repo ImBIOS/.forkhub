@@ -166,7 +166,7 @@ jobs:
             TAGS=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
             BASE=$(printf '%s' "$UP" | sed 's/^v//;s/\./\\./g')
             if [ -n "$SUFFIX" ] \
-              && printf '%s\n' "$TAGS" | grep -qE "^v${BASE}\\.${SUFFIX}\\.[a-z0-9-]+\\.[0-9]+\$"; then
+              && printf '%s\n' "$TAGS" | grep -qE "^v${BASE}[-.]${SUFFIX}\\.[a-z0-9-]+\\.[0-9]+\$"; then
               echo "$UP already has a $SUFFIX updater release; skipping"
               SKIP="true"
             elif [ -z "$SUFFIX" ] && printf '%s\n' "$TAGS" | grep -qxF "$UP"; then

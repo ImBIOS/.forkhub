@@ -39,9 +39,12 @@ polls. The shared workflow step separately publishes the namespaced
 `pingdotgg-t3code-v<ver>-fh<N>` bundle release (human-facing, carries
 `CONSUME.md`).
 
-Versions are `<upstream>.fh.<owner>.<n>` (suffix from
+Versions are `<upstream><joiner><suffix>.<owner>.<n>` (suffix from
 `upstream.json:version_suffix`, owner from the catalog repo, `n` counting
-existing updater releases so force-rebuilds advance). The prerelease
+existing updater releases so force-rebuilds advance). The joiner is `.`
+after an existing prerelease part, `-` on a bare base — the result MUST
+stay valid semver: electron-builder silently mangles invalid versions
+(`0.0.42.fh.imbios.1` once shipped as `0.0.4-2.fh.imbios.1`). The
 extension keeps train ordering (nightly dates still compare) while
 advertising the fork — and it reads as an upgrade over the same-base
 upstream build, so switching tracks offers the ForkHub build.

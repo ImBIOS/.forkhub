@@ -746,7 +746,7 @@ index 7fd50a82..79842e97 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
-index acf4155f..d17ba340 100644
+index acf4155fab..d182eaf64d 100644
 --- a/apps/desktop/src/updates/updateChannels.test.ts
 +++ b/apps/desktop/src/updates/updateChannels.test.ts
 @@ -1,6 +1,13 @@
@@ -764,7 +764,7 @@ index acf4155f..d17ba340 100644
  
  describe("updateChannels", () => {
    it("keeps preview builds branded as nightly but on the latest update channel", () => {
-@@ -12,5 +19,54 @@ describe("updateChannels", () => {
+@@ -12,5 +19,55 @@ describe("updateChannels", () => {
    it("only matches the first prerelease identifier", () => {
      expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
      expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
@@ -803,7 +803,7 @@ index acf4155f..d17ba340 100644
 +
 +  it("gives ForkHub builds a provenance suffix that only ForkHub installs", () => {
 +    expect(isForkHubDerivedVersion("0.0.43-nightly.20260924.2187.fh.imbios.1")).toBe(true);
-+    expect(isForkHubDerivedVersion("0.0.42.fh.imbios.2")).toBe(true);
++    expect(isForkHubDerivedVersion("0.0.42-fh.imbios.2")).toBe(true);
 +    expect(isForkHubDerivedVersion("0.0.43-nightly.20260924.2187")).toBe(false);
 +    expect(isForkHubDerivedVersion("0.0.42")).toBe(false);
 +    expect(
@@ -812,28 +812,32 @@ index acf4155f..d17ba340 100644
 +    expect(
 +      isVersionAllowedOnUpdateChannel("0.0.43-nightly.20260924.2187.fh.imbios.1", "nightly"),
 +    ).toBe(false);
-+    expect(isVersionAllowedOnUpdateChannel("0.0.42.fh.imbios.1", "latest")).toBe(false);
-+    expect(isVersionAllowedOnUpdateChannel("0.0.42.fh.imbios.1", "forkhub")).toBe(true);
++    expect(isVersionAllowedOnUpdateChannel("0.0.42-fh.imbios.1", "latest")).toBe(false);
++    expect(isVersionAllowedOnUpdateChannel("0.0.42-fh.imbios.1", "forkhub")).toBe(true);
 +    expect(resolveDefaultDesktopUpdateChannel("0.0.43-nightly.20260924.2187.fh.imbios.1")).toBe(
 +      "nightly",
 +    );
++    expect(resolveDefaultDesktopUpdateChannel("0.0.42-fh.imbios.1")).toBe("latest");
    });
  });
 diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
-index e7f9a2f8..d79480f9 100644
+index e7f9a2f854..c76d9a6d5c 100644
 --- a/apps/desktop/src/updates/updateChannels.ts
 +++ b/apps/desktop/src/updates/updateChannels.ts
-@@ -1,18 +1,75 @@
+@@ -1,18 +1,78 @@
 -import type { DesktopUpdateChannel } from "@t3tools/contracts";
 +import type { DesktopForkHubRepo, DesktopUpdateChannel } from "@t3tools/contracts";
  
  const NIGHTLY_VERSION_PATTERN = /^[^-+]+-nightly\.\d{8}\.\d+$/;
-+// ForkHub builds carry the upstream version plus a `.fh.<owner>.<n>`
-+// prerelease extension (e.g. `0.0.43-nightly.20260924.2187.fh.imbios.1`),
-+// so the build advertises its provenance while keeping train ordering.
-+const FORKHUB_VERSION_SUFFIX_PATTERN = /\.fh\.[a-z0-9-]+\.\d+$/;
++// ForkHub builds carry the upstream version plus a provenance prerelease
++// extension — `.fh.<owner>.<n>` after an existing prerelease part, or
++// `-fh.<owner>.<n>` on a bare base (e.g. `0.0.43-nightly.20260924.2187`
++// → `…2187.fh.imbios.1`, `0.0.42` → `0.0.42-fh.imbios.1`). The joiner
++// keeps the version valid semver: electron-builder mangles invalid ones
++// (`0.0.42.fh.imbios.1` once shipped as `0.0.4-2.fh.imbios.1`).
++const FORKHUB_VERSION_SUFFIX_PATTERN = /[-.]fh\.[a-z0-9-]+\.\d+$/;
 +const NIGHTLY_OR_FORKHUB_VERSION_PATTERN =
-+  /^[^-+]+-nightly\.\d{8}\.\d+(?:\.fh\.[a-z0-9-]+\.\d+)?$/;
++  /^[^-+]+-nightly\.\d{8}\.\d+(?:[-.]fh\.[a-z0-9-]+\.\d+)?$/;
 +const PREVIEW_VERSION_PATTERN = /^[^-+]+-preview\.\d{8}\.\d+$/;
 +
 +export function isForkHubDerivedVersion(version: string): boolean {
@@ -1737,7 +1741,7 @@ index 7caf6d1c..16253a7c 100644
    downloadUpdate: () => Promise<DesktopUpdateActionResult>;
    installUpdate: () => Promise<DesktopUpdateActionResult>;
 diff --git a/scripts/build-desktop-artifact.test.ts b/scripts/build-desktop-artifact.test.ts
-index 4e97301d..c5dca377 100644
+index 05fc0baa45..bc25f6b5ff 100644
 --- a/scripts/build-desktop-artifact.test.ts
 +++ b/scripts/build-desktop-artifact.test.ts
 @@ -251,6 +251,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
@@ -1749,28 +1753,28 @@ index 4e97301d..c5dca377 100644
 +      resolveDesktopUpdateChannel("0.0.43-nightly.20260924.2187.fh.imbios.1"),
 +      "nightly",
 +    );
-+    assert.equal(resolveDesktopUpdateChannel("0.0.42.fh.imbios.1"), "latest");
++    assert.equal(resolveDesktopUpdateChannel("0.0.42-fh.imbios.1"), "latest");
    });
  
    it("switches desktop packaging product names to nightly for nightly builds", () => {
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index d2d9df76..0c6c8833 100644
+index 02e514d83f..be5434781b 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
-@@ -2538,3 +2538,3 @@ export function resolveDesktopRuntimeDependencies(
+@@ -2537,3 +2537,3 @@ export function resolveDesktopRuntimeDependencies(
  export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
 -  updateChannel: "latest" | "nightly",
 +  updateChannel: "latest" | "nightly" | "forkhub",
  ) {
-@@ -2564,3 +2564,6 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
+@@ -2563,3 +2563,6 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
  export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
 -  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
-+  // ForkHub builds keep the upstream train plus a `.fh.<owner>.<n>`
-+  // provenance suffix; the train (and its updater manifests) still follow
-+  // the base version.
-+  return /-nightly\.\d{8}\.\d+(?:\.fh\.[a-z0-9-]+\.\d+)?$/.test(version) ? "nightly" : "latest";
++  // ForkHub builds keep the upstream train plus a provenance suffix
++  // (`.fh.` after a prerelease part, `-fh.` on a bare base); the train
++  // (and its updater manifests) still follow the base version.
++  return /-nightly\.\d{8}\.\d+(?:[-.]fh\.[a-z0-9-]+\.\d+)?$/.test(version) ? "nightly" : "latest";
  }
-@@ -2583,2 +2586,11 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
+@@ -2582,2 +2585,11 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
  export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
 +  // ForkHub keeps its own identity on every train: a nightly-based ForkHub
 +  // build must not wear upstream nightly's icons.
@@ -1782,7 +1786,7 @@ index d2d9df76..0c6c8833 100644
 +    };
 +  }
    if (resolveDesktopUpdateChannel(version) === "nightly") {
-@@ -2615,3 +2627,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
+@@ -2614,3 +2626,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
  
 +export function isForkHubDesktopBuild(): boolean {
 +  return process.env.T3CODE_FORKHUB_BUILD?.trim() === "1";

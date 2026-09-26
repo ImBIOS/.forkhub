@@ -71,7 +71,10 @@ before creating it. ForkHub builds always wear production icons
 - **Tag selection.** `upstream.json:tag_ignore_pattern` keeps the shared
   clone step on the stable train (upstream tags are mostly `-preview`
   maintainer cuts). If upstream changes tagging, update the pattern.
-- **Known drift risk.** `reference.diff` is verified against the latest
-  stable tag at capture time. When upstream drifts, the apply step fails
-  loudly — re-derive via `fh` (`drift-check` → `re-derive` → `apply`) and
-  re-capture; do not hand-edit `reference.diff`.
+- **Known drift risk.** `reference.diff` tracks the newest train; older
+  trains whose trees drifted carry `reference.<train>.diff` (currently
+  `reference.stable.diff`, verified on upstream v0.0.42) and the build
+  workflow prefers it automatically. When upstream drifts everywhere, the
+  apply step fails loudly — re-derive via `fh` (`drift-check` →
+  `re-derive` → `apply`) or dispatch `forkhub reimplement`, and re-capture;
+  do not hand-edit `reference.diff`.

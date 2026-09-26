@@ -193,10 +193,19 @@ jobs:
           for id in $(jq -r '.apply_order[]' "$FH/repos/${{ matrix.pair.target }}/manifest.json"); do
             p="$FH/repos/${{ matrix.pair.target }}/patches/$id"
             echo "→ $id"
+            # Per-train realizations: a patch may carry reference.<train>.diff
+            # (e.g. reference.stable.diff) for trees the default reference no
+            # longer applies to. Default train always uses reference.diff.
+            REF="$p/reference.diff"
+            if [ "${{ matrix.pair.train }}" != "default" ] \
+              && [ -f "$p/reference.${{ matrix.pair.train }}.diff" ]; then
+              REF="$p/reference.${{ matrix.pair.train }}.diff"
+              echo "using per-train reference for train ${{ matrix.pair.train }}"
+            fi
             # Heal colored diffs captured with color.diff=always (CLI now
             # captures --no-color, but old intents may carry ANSI escapes).
             CLEAN="$(mktemp)"
-            sed -e 's/\x1b\[[0-9;]*m//g' "$p/reference.diff" > "$CLEAN"
+            sed -e 's/\x1b\[[0-9;]*m//g' "$REF" > "$CLEAN"
             if ! grep -qE '^(diff --git |--- )' "$CLEAN"; then
               echo "::warning::$id reference.diff has no usable hunks — skipping (re-capture or re-derive)"
               continue

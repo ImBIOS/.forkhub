@@ -1,7 +1,8 @@
-## T3 Code x ForkHub — use this build (nightly train)
+## T3 Code x ForkHub — use this build (stable + nightly trains)
 
 Patched T3 Code that updates from a ForkHub channel instead of upstream.
-This channel follows upstream nightly: expect a fresh build most days.
+This channel follows upstream stable and nightly: steady releases plus a
+fresh build most days. The ForkHub track installs either train.
 
 1. **Install** the `T3-Code-*-x64.AppImage` below (Linux; macOS/Windows
    build locally — see `build/BUILD.md`). It installs side-by-side with

@@ -1,10 +1,12 @@
-# Build — github.com/pingdotgg/t3code (ForkHub track, nightly train)
+# Build — github.com/pingdotgg/t3code (ForkHub track, stable + nightly)
 
 Repo-native build for the ForkHub T3 Code channel. Runs on `ubuntu-latest`
 after the intent stack is applied and `verify.sh` passes. This catalog
-follows upstream **nightly** (`upstream.json:tag_match_pattern`); each
-build carries the upstream nightly version verbatim (e.g.
-`0.0.43-nightly.20260924.2187`).
+follows upstream **stable and nightly** (`upstream.json:trains`); each
+build carries its train's upstream version plus provenance (e.g.
+`0.0.42.fh.imbios.1`, `0.0.43-nightly.20260924.2187.fh.imbios.1`). The app's
+ForkHub track installs both trains, so one channel serves cautious and
+bleeding-edge users alike.
 
 ## What `build.sh` does
 

@@ -356,8 +356,44 @@ index cef90b2987..66d6c16024 100644
              currentVersion: "1.2.3",
              hostArch: "arm64",
              appArch: "arm64",
+diff --git a/apps/desktop/src/updates/DesktopUpdates.test.ts b/apps/desktop/src/updates/DesktopUpdates.test.ts
+index 5097785215..42d943491f 100644
+--- a/apps/desktop/src/updates/DesktopUpdates.test.ts
++++ b/apps/desktop/src/updates/DesktopUpdates.test.ts
+@@ -777,6 +777,31 @@ describe("DesktopUpdates", () => {
+     }),
+   );
+ 
++  it.effect("asks for a ForkHub owner instead of switching without a feed", () => {
++    const harness = makeHarness();
++
++    return Effect.scoped(
++      Effect.gen(function* () {
++        const settings = yield* DesktopAppSettings.DesktopAppSettings;
++        const updates = yield* DesktopUpdates.DesktopUpdates;
++        yield* updates.configure;
++
++        const error = yield* updates.setChannel("forkhub").pipe(Effect.flip);
++
++        assert.instanceOf(error, DesktopUpdates.DesktopForkHubOwnerMissingError);
++        assert.equal(
++          error.message,
++          "Set a ForkHub profile or org before switching to the ForkHub track.",
++        );
++
++        // Nothing persisted: the track stays where it was.
++        const persistedSettings = yield* settings.get;
++        assert.equal(persistedSettings.updateChannel, "latest");
++        assert.equal((yield* updates.getState).channel, "latest");
++      }),
++    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
++  });
++
+   it.effect("preserves settings failure context when an update channel cannot be persisted", () => {
+     const diskFailure = new Error("disk exploded");
+     const settingsFailure = new DesktopAppSettings.DesktopSettingsWriteError({
 diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
-index c35b52e834..5a647d318d 100644
+index c35b52e834..1d7b4d37da 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.ts
 @@ -1,5 +1,6 @@
@@ -380,7 +416,31 @@ index c35b52e834..5a647d318d 100644
  import {
    createInitialDesktopUpdateState,
    reduceDesktopUpdateStateOnCheckFailure,
-@@ -180,6 +185,10 @@ export class DesktopUpdates extends Context.Service<
+@@ -100,6 +105,15 @@ export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<Des
+   }
+ }
+ 
++export class DesktopForkHubOwnerMissingError extends Schema.TaggedError<DesktopForkHubOwnerMissingError>()(
++  "DesktopForkHubOwnerMissingError",
++  {},
++) {
++  override get message(): string {
++    return "Set a ForkHub profile or org before switching to the ForkHub track.";
++  }
++}
++
+ export class DesktopUpdatePollerError extends Schema.TaggedError<DesktopUpdatePollerError>()(
+   "DesktopUpdatePollerError",
+   {
+@@ -153,6 +167,7 @@ export type DesktopUpdateConfigureError = never;
+ export const DesktopUpdateSetChannelError = Schema.Union([
+   DesktopUpdateActionInProgressError,
+   DesktopUpdateChannelPersistenceError,
++  DesktopForkHubOwnerMissingError,
+ ]);
+ export type DesktopUpdateSetChannelError = typeof DesktopUpdateSetChannelError.Type;
+ 
+@@ -180,6 +195,10 @@ export class DesktopUpdates extends Context.Service<
      readonly setChannel: (
        channel: DesktopUpdateChannel,
      ) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
@@ -391,7 +451,7 @@ index c35b52e834..5a647d318d 100644
      readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
      readonly download: Effect.Effect<DesktopUpdateActionResult>;
      readonly install: Effect.Effect<DesktopUpdateActionResult>;
-@@ -214,9 +223,14 @@ function createBaseUpdateState(
+@@ -214,9 +233,14 @@ function createBaseUpdateState(
    channel: DesktopUpdateChannel,
    enabled: boolean,
    environment: DesktopEnvironment.DesktopEnvironment["Service"],
@@ -407,7 +467,7 @@ index c35b52e834..5a647d318d 100644
      enabled,
      status: enabled ? "idle" : "disabled",
    };
-@@ -292,6 +306,10 @@ export const make = Effect.gen(function* () {
+@@ -292,6 +316,10 @@ export const make = Effect.gen(function* () {
        environment.appVersion,
        environment.runtimeInfo,
        environment.defaultDesktopSettings.updateChannel,
@@ -418,7 +478,7 @@ index c35b52e834..5a647d318d 100644
      ),
    );
  
-@@ -337,16 +355,25 @@ export const make = Effect.gen(function* () {
+@@ -337,16 +365,25 @@ export const make = Effect.gen(function* () {
  
    const resolveDisabledReason = Effect.gen(function* () {
      const hasFeedConfig = yield* hasUpdateFeedConfig;
@@ -454,7 +514,7 @@ index c35b52e834..5a647d318d 100644
    });
  
    const activeUpdateAction = Ref.get(activeUpdateActionRef);
-@@ -374,8 +401,38 @@ export const make = Effect.gen(function* () {
+@@ -374,8 +411,38 @@ export const make = Effect.gen(function* () {
  
    const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
      channel: DesktopUpdateChannel,
@@ -493,7 +553,7 @@ index c35b52e834..5a647d318d 100644
      const allowsPrerelease = channel === "nightly";
      yield* electronUpdater.setChannel(channel);
      yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
-@@ -696,7 +753,7 @@ export const make = Effect.gen(function* () {
+@@ -696,7 +763,7 @@ export const make = Effect.gen(function* () {
        Effect.flatMap(
          Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
            const state = yield* Ref.get(updateStateRef);
@@ -502,7 +562,7 @@ index c35b52e834..5a647d318d 100644
              yield* logUpdaterInfo("ignoring update that does not match selected channel", {
                version: info.version,
                channel: state.channel,
-@@ -879,7 +936,12 @@ export const make = Effect.gen(function* () {
+@@ -879,7 +946,12 @@ export const make = Effect.gen(function* () {
  
        const settings = yield* desktopSettings.get;
        const enabled = yield* shouldEnableAutoUpdates;
@@ -516,7 +576,7 @@ index c35b52e834..5a647d318d 100644
        if (!enabled) {
          return;
        }
-@@ -887,7 +949,10 @@ export const make = Effect.gen(function* () {
+@@ -887,7 +959,10 @@ export const make = Effect.gen(function* () {
  
        yield* electronUpdater.setAutoDownload(false);
        yield* electronUpdater.setAutoInstallOnAppQuit(false);
@@ -528,7 +588,7 @@ index c35b52e834..5a647d318d 100644
        yield* electronUpdater.setDisableDifferentialDownload(
          isArm64HostRunningIntelBuild(environment.runtimeInfo),
        );
-@@ -940,6 +1005,22 @@ export const make = Effect.gen(function* () {
+@@ -940,6 +1015,13 @@ export const make = Effect.gen(function* () {
          if (nextChannel === state.channel) {
            return state;
          }
@@ -536,22 +596,13 @@ index c35b52e834..5a647d318d 100644
 +        if (nextChannel === "forkhub") {
 +          const settings = yield* desktopSettings.get;
 +          if (normalizeForkHubOwner(settings.forkhubOwner) === null) {
-+            return yield* new DesktopUpdateChannelPersistenceError({
-+              channel: nextChannel,
-+              cause: new DesktopAppSettings.DesktopSettingsWriteError({
-+                operation: "encode-document",
-+                path: "desktop-settings.json",
-+                cause: new Error(
-+                  "Set a ForkHub profile or org first: the updater needs to know whose `.forkhub` releases to poll.",
-+                ),
-+              }),
-+            });
++            return yield* new DesktopForkHubOwnerMissingError();
 +          }
 +        }
  
          yield* desktopSettings
            .setUpdateChannel(nextChannel)
-@@ -949,14 +1030,23 @@ export const make = Effect.gen(function* () {
+@@ -949,14 +1031,23 @@ export const make = Effect.gen(function* () {
              ),
            );
  
@@ -577,7 +628,7 @@ index c35b52e834..5a647d318d 100644
          const allowDowngrade = yield* electronUpdater.allowDowngrade;
          yield* electronUpdater.setAllowDowngrade(true);
          yield* checkForUpdates("channel-change", "held").pipe(
-@@ -965,6 +1055,51 @@ export const make = Effect.gen(function* () {
+@@ -965,6 +1056,51 @@ export const make = Effect.gen(function* () {
          return yield* Ref.get(updateStateRef);
        }).pipe(Effect.ensuring(finishUpdateAction("channel")));
      }),

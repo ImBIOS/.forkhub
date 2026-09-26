@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts]
 status: applied
 applied_upstream_pr: none
-version: 3
+version: 4
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -42,8 +42,10 @@ patched install is never mistaken for stock.
    byte-for-byte the old behavior. ForkHub code paths only run when the user
    selects the track.
 2. **No owner, no feed.** Selecting ForkHub without a validated owner fails
-   with a typed persistence error telling the user to set the profile/org
-   first; the updater feed is never pointed at an empty or invalid owner.
+   with `DesktopForkHubOwnerMissingError` ("Set a ForkHub profile or org
+   before switching to the ForkHub track."); the updater feed is never
+   pointed at an empty or invalid owner. The Check button is the happy
+   path: it persists the owner and switches the track in one go.
 3. **Validation is releases, not just the account.** Check passes only if
    the public `{owner}/.forkhub` repo exists AND has at least one published,
    non-draft release. A bare account or an empty catalog is rejected with a

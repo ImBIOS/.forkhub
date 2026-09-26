@@ -1,5 +1,5 @@
 diff --git a/apps/desktop/src/app/DesktopEnvironment.test.ts b/apps/desktop/src/app/DesktopEnvironment.test.ts
-index b5aabf253d..2a2038fb4c 100644
+index b5aabf25..2a2038fb 100644
 --- a/apps/desktop/src/app/DesktopEnvironment.test.ts
 +++ b/apps/desktop/src/app/DesktopEnvironment.test.ts
 @@ -182,6 +182,27 @@ describe("DesktopEnvironment", () => {
@@ -31,7 +31,7 @@ index b5aabf253d..2a2038fb4c 100644
      Effect.gen(function* () {
        const environment = yield* makeEnvironment();
 diff --git a/apps/desktop/src/app/DesktopEnvironment.ts b/apps/desktop/src/app/DesktopEnvironment.ts
-index d6924b08ac..8622e8efa6 100644
+index beb09bd5..97e7dfef 100644
 --- a/apps/desktop/src/app/DesktopEnvironment.ts
 +++ b/apps/desktop/src/app/DesktopEnvironment.ts
 @@ -12,6 +12,7 @@ import * as Option from "effect/Option";
@@ -42,7 +42,7 @@ index d6924b08ac..8622e8efa6 100644
  import * as DesktopConfig from "./DesktopConfig.ts";
  import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
  import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
-@@ -106,11 +107,22 @@ function resolveDesktopAppStageLabel(input: {
+@@ -108,11 +109,22 @@ function resolveDesktopAppStageLabel(input: {
    return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
  }
  
@@ -66,7 +66,7 @@ index d6924b08ac..8622e8efa6 100644
      baseName: APP_BASE_NAME,
      stageLabel,
 diff --git a/apps/desktop/src/backend/DesktopServerExposure.test.ts b/apps/desktop/src/backend/DesktopServerExposure.test.ts
-index 0914167cff..4efc8f9d72 100644
+index 0914167c..4efc8f9d 100644
 --- a/apps/desktop/src/backend/DesktopServerExposure.test.ts
 +++ b/apps/desktop/src/backend/DesktopServerExposure.test.ts
 @@ -254,6 +254,7 @@ describe("DesktopServerExposure", () => {
@@ -78,7 +78,7 @@ index 0914167cff..4efc8f9d72 100644
        setWslDistro: () => Effect.die("unexpected WSL distro change"),
        setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
 diff --git a/apps/desktop/src/ipc/DesktopIpcHandlers.ts b/apps/desktop/src/ipc/DesktopIpcHandlers.ts
-index c97c602552..d9d782cae0 100644
+index c97c6025..d9d782ca 100644
 --- a/apps/desktop/src/ipc/DesktopIpcHandlers.ts
 +++ b/apps/desktop/src/ipc/DesktopIpcHandlers.ts
 @@ -34,6 +34,7 @@ import {
@@ -98,10 +98,10 @@ index c97c602552..d9d782cae0 100644
    yield* ipc.handle(installUpdate);
    yield* ipc.handle(checkForUpdate);
 diff --git a/apps/desktop/src/ipc/channels.ts b/apps/desktop/src/ipc/channels.ts
-index f49b6dbd96..1bf7040108 100644
+index e8a688c1..eb79fb3b 100644
 --- a/apps/desktop/src/ipc/channels.ts
 +++ b/apps/desktop/src/ipc/channels.ts
-@@ -19,6 +19,7 @@ export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-re
+@@ -20,6 +20,7 @@ export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-re
  export const UPDATE_STATE_CHANNEL = "desktop:update-state";
  export const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
  export const UPDATE_SET_CHANNEL_CHANNEL = "desktop:update-set-channel";
@@ -110,7 +110,7 @@ index f49b6dbd96..1bf7040108 100644
  export const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
  export const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 diff --git a/apps/desktop/src/ipc/methods/updates.ts b/apps/desktop/src/ipc/methods/updates.ts
-index b221260903..c92bbdac14 100644
+index b2212609..c92bbdac 100644
 --- a/apps/desktop/src/ipc/methods/updates.ts
 +++ b/apps/desktop/src/ipc/methods/updates.ts
 @@ -1,4 +1,5 @@
@@ -140,10 +140,10 @@ index b221260903..c92bbdac14 100644
    channel: IpcChannels.UPDATE_DOWNLOAD_CHANNEL,
    payload: Schema.Void,
 diff --git a/apps/desktop/src/preload.ts b/apps/desktop/src/preload.ts
-index 7256f610fb..a7178da2f8 100644
+index 53d8cca7..7b2f47e6 100644
 --- a/apps/desktop/src/preload.ts
 +++ b/apps/desktop/src/preload.ts
-@@ -243,6 +243,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
+@@ -248,6 +248,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
    getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
    setUpdateChannel: (channel) =>
      ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),
@@ -153,7 +153,7 @@ index 7256f610fb..a7178da2f8 100644
    downloadUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_DOWNLOAD_CHANNEL),
    installUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL_CHANNEL),
 diff --git a/apps/desktop/src/settings/DesktopAppSettings.test.ts b/apps/desktop/src/settings/DesktopAppSettings.test.ts
-index f7db3c2778..d40a94468b 100644
+index f7db3c27..d40a9446 100644
 --- a/apps/desktop/src/settings/DesktopAppSettings.test.ts
 +++ b/apps/desktop/src/settings/DesktopAppSettings.test.ts
 @@ -132,6 +132,8 @@ describe("DesktopSettings", () => {
@@ -220,7 +220,7 @@ index f7db3c2778..d40a94468b 100644
            wslOnly: false,
            wslDistro: null,
 diff --git a/apps/desktop/src/settings/DesktopAppSettings.ts b/apps/desktop/src/settings/DesktopAppSettings.ts
-index 19fcf0e759..546bb1803c 100644
+index 19fcf0e7..546bb180 100644
 --- a/apps/desktop/src/settings/DesktopAppSettings.ts
 +++ b/apps/desktop/src/settings/DesktopAppSettings.ts
 @@ -1,6 +1,8 @@
@@ -344,7 +344,7 @@ index 19fcf0e759..546bb1803c 100644
            update((settings) => setWslBackendEnabled(settings, enabled)),
          setWslDistro: (distro) => update((settings) => setWslDistro(settings, distro)),
 diff --git a/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts b/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
-index cef90b2987..66d6c16024 100644
+index cef90b29..66d6c160 100644
 --- a/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
 +++ b/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
 @@ -428,6 +428,8 @@ describe("DesktopTelemetryPublisher", () => {
@@ -357,10 +357,10 @@ index cef90b2987..66d6c16024 100644
              hostArch: "arm64",
              appArch: "arm64",
 diff --git a/apps/desktop/src/updates/DesktopUpdates.test.ts b/apps/desktop/src/updates/DesktopUpdates.test.ts
-index 5097785215..42d943491f 100644
+index 9745662c..24472787 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.test.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.test.ts
-@@ -777,6 +777,31 @@ describe("DesktopUpdates", () => {
+@@ -849,6 +849,31 @@ describe("DesktopUpdates", () => {
      }),
    );
  
@@ -393,17 +393,18 @@ index 5097785215..42d943491f 100644
      const diskFailure = new Error("disk exploded");
      const settingsFailure = new DesktopAppSettings.DesktopSettingsWriteError({
 diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
-index c35b52e834..1d7b4d37da 100644
+index 245925a6..c5f6800b 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.ts
-@@ -1,5 +1,6 @@
+@@ -1,6 +1,7 @@
  import {
+   DESKTOP_UPDATE_RESTART_MARKER_FILE,
    DesktopUpdateChannelSchema,
 +  type DesktopForkHubRepo,
    type DesktopRuntimeInfo,
    type DesktopUpdateActionResult,
    type DesktopUpdateChannel,
-@@ -32,7 +33,11 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
+@@ -33,7 +34,11 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
  import * as IpcChannels from "../ipc/channels.ts";
  import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
  import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
@@ -416,7 +417,7 @@ index c35b52e834..1d7b4d37da 100644
  import {
    createInitialDesktopUpdateState,
    reduceDesktopUpdateStateOnCheckFailure,
-@@ -100,6 +105,15 @@ export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<Des
+@@ -101,6 +106,15 @@ export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<Des
    }
  }
  
@@ -432,7 +433,7 @@ index c35b52e834..1d7b4d37da 100644
  export class DesktopUpdatePollerError extends Schema.TaggedError<DesktopUpdatePollerError>()(
    "DesktopUpdatePollerError",
    {
-@@ -153,6 +167,7 @@ export type DesktopUpdateConfigureError = never;
+@@ -154,6 +168,7 @@ export type DesktopUpdateConfigureError = never;
  export const DesktopUpdateSetChannelError = Schema.Union([
    DesktopUpdateActionInProgressError,
    DesktopUpdateChannelPersistenceError,
@@ -440,7 +441,7 @@ index c35b52e834..1d7b4d37da 100644
  ]);
  export type DesktopUpdateSetChannelError = typeof DesktopUpdateSetChannelError.Type;
  
-@@ -180,6 +195,10 @@ export class DesktopUpdates extends Context.Service<
+@@ -181,6 +196,10 @@ export class DesktopUpdates extends Context.Service<
      readonly setChannel: (
        channel: DesktopUpdateChannel,
      ) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
@@ -451,7 +452,7 @@ index c35b52e834..1d7b4d37da 100644
      readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
      readonly download: Effect.Effect<DesktopUpdateActionResult>;
      readonly install: Effect.Effect<DesktopUpdateActionResult>;
-@@ -214,9 +233,14 @@ function createBaseUpdateState(
+@@ -215,9 +234,14 @@ function createBaseUpdateState(
    channel: DesktopUpdateChannel,
    enabled: boolean,
    environment: DesktopEnvironment.DesktopEnvironment["Service"],
@@ -467,7 +468,7 @@ index c35b52e834..1d7b4d37da 100644
      enabled,
      status: enabled ? "idle" : "disabled",
    };
-@@ -292,6 +316,10 @@ export const make = Effect.gen(function* () {
+@@ -294,6 +318,10 @@ export const make = Effect.gen(function* () {
        environment.appVersion,
        environment.runtimeInfo,
        environment.defaultDesktopSettings.updateChannel,
@@ -478,7 +479,7 @@ index c35b52e834..1d7b4d37da 100644
      ),
    );
  
-@@ -337,16 +365,25 @@ export const make = Effect.gen(function* () {
+@@ -351,17 +379,26 @@ export const make = Effect.gen(function* () {
  
    const resolveDisabledReason = Effect.gen(function* () {
      const hasFeedConfig = yield* hasUpdateFeedConfig;
@@ -488,6 +489,7 @@ index c35b52e834..1d7b4d37da 100644
 -        isPackaged: environment.isPackaged,
 -        platform: environment.platform,
 -        appImage: Option.getOrUndefined(config.appImagePath),
+-        isDebPackage,
 -        disabledByEnv: config.disableAutoUpdate,
 -        hasUpdateFeedConfig: hasFeedConfig,
 -      }),
@@ -497,6 +499,7 @@ index c35b52e834..1d7b4d37da 100644
 +      isPackaged: environment.isPackaged,
 +      platform: environment.platform,
 +      appImage: Option.getOrUndefined(config.appImagePath),
++      isDebPackage,
 +      disabledByEnv: config.disableAutoUpdate,
 +      hasUpdateFeedConfig: hasFeedConfig,
 +    });
@@ -514,7 +517,7 @@ index c35b52e834..1d7b4d37da 100644
    });
  
    const activeUpdateAction = Ref.get(activeUpdateActionRef);
-@@ -374,8 +411,38 @@ export const make = Effect.gen(function* () {
+@@ -389,8 +426,38 @@ export const make = Effect.gen(function* () {
  
    const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
      channel: DesktopUpdateChannel,
@@ -553,7 +556,7 @@ index c35b52e834..1d7b4d37da 100644
      const allowsPrerelease = channel === "nightly";
      yield* electronUpdater.setChannel(channel);
      yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
-@@ -696,7 +763,7 @@ export const make = Effect.gen(function* () {
+@@ -741,7 +808,7 @@ export const make = Effect.gen(function* () {
        Effect.flatMap(
          Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
            const state = yield* Ref.get(updateStateRef);
@@ -562,7 +565,7 @@ index c35b52e834..1d7b4d37da 100644
              yield* logUpdaterInfo("ignoring update that does not match selected channel", {
                version: info.version,
                channel: state.channel,
-@@ -879,7 +946,12 @@ export const make = Effect.gen(function* () {
+@@ -924,7 +991,12 @@ export const make = Effect.gen(function* () {
  
        const settings = yield* desktopSettings.get;
        const enabled = yield* shouldEnableAutoUpdates;
@@ -576,7 +579,7 @@ index c35b52e834..1d7b4d37da 100644
        if (!enabled) {
          return;
        }
-@@ -887,7 +959,10 @@ export const make = Effect.gen(function* () {
+@@ -932,7 +1004,10 @@ export const make = Effect.gen(function* () {
  
        yield* electronUpdater.setAutoDownload(false);
        yield* electronUpdater.setAutoInstallOnAppQuit(false);
@@ -588,7 +591,7 @@ index c35b52e834..1d7b4d37da 100644
        yield* electronUpdater.setDisableDifferentialDownload(
          isArm64HostRunningIntelBuild(environment.runtimeInfo),
        );
-@@ -940,6 +1015,13 @@ export const make = Effect.gen(function* () {
+@@ -985,6 +1060,13 @@ export const make = Effect.gen(function* () {
          if (nextChannel === state.channel) {
            return state;
          }
@@ -602,7 +605,7 @@ index c35b52e834..1d7b4d37da 100644
  
          yield* desktopSettings
            .setUpdateChannel(nextChannel)
-@@ -949,14 +1031,23 @@ export const make = Effect.gen(function* () {
+@@ -994,14 +1076,23 @@ export const make = Effect.gen(function* () {
              ),
            );
  
@@ -628,7 +631,7 @@ index c35b52e834..1d7b4d37da 100644
          const allowDowngrade = yield* electronUpdater.allowDowngrade;
          yield* electronUpdater.setAllowDowngrade(true);
          yield* checkForUpdates("channel-change", "held").pipe(
-@@ -965,6 +1056,51 @@ export const make = Effect.gen(function* () {
+@@ -1010,6 +1101,51 @@ export const make = Effect.gen(function* () {
          return yield* Ref.get(updateStateRef);
        }).pipe(Effect.ensuring(finishUpdateAction("channel")));
      }),
@@ -681,7 +684,7 @@ index c35b52e834..1d7b4d37da 100644
        yield* Effect.annotateCurrentSpan({ reason });
        if (!(yield* Ref.get(updaterConfiguredRef))) {
 diff --git a/apps/desktop/src/updates/releaseNotes.test.ts b/apps/desktop/src/updates/releaseNotes.test.ts
-index 57d185c097..8385c8206d 100644
+index 57d185c0..8385c820 100644
 --- a/apps/desktop/src/updates/releaseNotes.test.ts
 +++ b/apps/desktop/src/updates/releaseNotes.test.ts
 @@ -123,6 +123,23 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
@@ -709,7 +712,7 @@ index 57d185c097..8385c8206d 100644
      const result = normalizeDesktopUpdateReleaseNotes(
        [
 diff --git a/apps/desktop/src/updates/releaseNotes.ts b/apps/desktop/src/updates/releaseNotes.ts
-index 3cab5f15e4..9de36c9978 100644
+index 3cab5f15..9de36c99 100644
 --- a/apps/desktop/src/updates/releaseNotes.ts
 +++ b/apps/desktop/src/updates/releaseNotes.ts
 @@ -1,6 +1,6 @@
@@ -730,7 +733,7 @@ index 3cab5f15e4..9de36c9978 100644
    const normalizedNotes = rawNotes.flatMap((entry) => {
      const { items, totalItems } = extractReleaseNoteItems(entry.note);
 diff --git a/apps/desktop/src/updates/remoteUpdateFlow.test.ts b/apps/desktop/src/updates/remoteUpdateFlow.test.ts
-index 7fd50a82f4..79842e97f1 100644
+index 7fd50a82..79842e97 100644
 --- a/apps/desktop/src/updates/remoteUpdateFlow.test.ts
 +++ b/apps/desktop/src/updates/remoteUpdateFlow.test.ts
 @@ -16,6 +16,8 @@ function makeState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateSt
@@ -743,7 +746,7 @@ index 7fd50a82f4..79842e97f1 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
-index acf4155fab..d17ba34019 100644
+index acf4155f..d17ba340 100644
 --- a/apps/desktop/src/updates/updateChannels.test.ts
 +++ b/apps/desktop/src/updates/updateChannels.test.ts
 @@ -1,6 +1,13 @@
@@ -817,7 +820,7 @@ index acf4155fab..d17ba34019 100644
    });
  });
 diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
-index e7f9a2f854..d79480f93c 100644
+index e7f9a2f8..d79480f9 100644
 --- a/apps/desktop/src/updates/updateChannels.ts
 +++ b/apps/desktop/src/updates/updateChannels.ts
 @@ -1,18 +1,75 @@
@@ -900,7 +903,7 @@ index e7f9a2f854..d79480f93c 100644
 +  return false;
  }
 diff --git a/apps/desktop/src/updates/updateMachine.ts b/apps/desktop/src/updates/updateMachine.ts
-index 85d8782ea6..9b310db9f3 100644
+index 85d8782e..9b310db9 100644
 --- a/apps/desktop/src/updates/updateMachine.ts
 +++ b/apps/desktop/src/updates/updateMachine.ts
 @@ -19,11 +19,14 @@ export function createInitialDesktopUpdateState(
@@ -919,10 +922,10 @@ index 85d8782ea6..9b310db9f3 100644
      hostArch: runtimeInfo.hostArch,
      appArch: runtimeInfo.appArch,
 diff --git a/apps/desktop/src/updates/updatesTestHarness.ts b/apps/desktop/src/updates/updatesTestHarness.ts
-index fbcbb349f9..9df5260e81 100644
+index 5455f160..12719e0b 100644
 --- a/apps/desktop/src/updates/updatesTestHarness.ts
 +++ b/apps/desktop/src/updates/updatesTestHarness.ts
-@@ -194,6 +194,19 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
+@@ -199,6 +199,19 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
                      }),
                    ),
                  ),
@@ -943,11 +946,11 @@ index fbcbb349f9..9df5260e81 100644
            setWslDistro: () => Effect.die("unexpected WSL distro change"),
            setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
 diff --git a/apps/desktop/src/window/DesktopApplicationMenu.test.ts b/apps/desktop/src/window/DesktopApplicationMenu.test.ts
-index 5f5cbaa1d7..4e26bd926c 100644
+index d24ffdcb..ea2f7b01 100644
 --- a/apps/desktop/src/window/DesktopApplicationMenu.test.ts
 +++ b/apps/desktop/src/window/DesktopApplicationMenu.test.ts
-@@ -66,6 +66,7 @@ const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
-   disabledReason: Effect.succeed(Option.none()),
+@@ -65,6 +65,7 @@ const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
+   disabledReason: Effect.succeedNone,
    configure: Effect.void,
    setChannel: () => Effect.die("unexpected setChannel"),
 +  setForkHubOwner: () => Effect.die("unexpected setForkHubOwner"),
@@ -955,10 +958,10 @@ index 5f5cbaa1d7..4e26bd926c 100644
    download: Effect.die("unexpected download"),
    install: Effect.die("unexpected install"),
 diff --git a/apps/desktop/src/window/DesktopWindow.test.ts b/apps/desktop/src/window/DesktopWindow.test.ts
-index 78834a5569..940939ca16 100644
+index 5df400b9..793fc38f 100644
 --- a/apps/desktop/src/window/DesktopWindow.test.ts
 +++ b/apps/desktop/src/window/DesktopWindow.test.ts
-@@ -253,6 +253,7 @@ function makeTestLayer(input: {
+@@ -254,6 +254,7 @@ function makeTestLayer(input: {
      setServerExposureMode: () => Effect.die("unexpected server exposure update"),
      setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
      setUpdateChannel: () => Effect.die("unexpected update channel change"),
@@ -967,7 +970,7 @@ index 78834a5569..940939ca16 100644
      setWslDistro: () => Effect.die("unexpected WSL distro change"),
      setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
 diff --git a/apps/mobile/src/components/BrandMark.tsx b/apps/mobile/src/components/BrandMark.tsx
-index c8f1d43855..886152be71 100644
+index c8f1d438..886152be 100644
 --- a/apps/mobile/src/components/BrandMark.tsx
 +++ b/apps/mobile/src/components/BrandMark.tsx
 @@ -14,10 +14,16 @@ const BRAND_MARK_SOURCE =
@@ -1000,7 +1003,7 @@ index c8f1d43855..886152be71 100644
              <Text className="text-3xs font-t3-bold tracking-[1.1px] uppercase text-foreground-muted">
                {stageLabel}
 diff --git a/apps/server/src/desktopUpdate/DesktopAppUpdate.test.ts b/apps/server/src/desktopUpdate/DesktopAppUpdate.test.ts
-index ea89f45e6d..a99e6e9454 100644
+index ea89f45e..a99e6e94 100644
 --- a/apps/server/src/desktopUpdate/DesktopAppUpdate.test.ts
 +++ b/apps/server/src/desktopUpdate/DesktopAppUpdate.test.ts
 @@ -18,6 +18,8 @@ function makeState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateSt
@@ -1013,7 +1016,7 @@ index ea89f45e6d..a99e6e9454 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/web/src/components/desktopUpdate.logic.test.ts b/apps/web/src/components/desktopUpdate.logic.test.ts
-index fcc97825b6..43be93b9ae 100644
+index fcc97825..43be93b9 100644
 --- a/apps/web/src/components/desktopUpdate.logic.test.ts
 +++ b/apps/web/src/components/desktopUpdate.logic.test.ts
 @@ -19,6 +19,8 @@ const baseState: DesktopUpdateState = {
@@ -1035,7 +1038,7 @@ index fcc97825b6..43be93b9ae 100644
    });
  });
 diff --git a/apps/web/src/components/desktopUpdate.logic.ts b/apps/web/src/components/desktopUpdate.logic.ts
-index 4a169cb3ef..e464bb3b17 100644
+index 4a169cb3..e464bb3b 100644
 --- a/apps/web/src/components/desktopUpdate.logic.ts
 +++ b/apps/web/src/components/desktopUpdate.logic.ts
 @@ -25,6 +25,36 @@ export function getDesktopUpdateReleaseHistoryUrl(): string {
@@ -1085,7 +1088,7 @@ index 4a169cb3ef..e464bb3b17 100644
  
  export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {
 diff --git a/apps/web/src/components/desktopUpdate.toast.test.tsx b/apps/web/src/components/desktopUpdate.toast.test.tsx
-index 0d1ba39618..2e76f92d29 100644
+index 0d1ba396..2e76f92d 100644
 --- a/apps/web/src/components/desktopUpdate.toast.test.tsx
 +++ b/apps/web/src/components/desktopUpdate.toast.test.tsx
 @@ -43,6 +43,8 @@ function downloadedState(overrides: Partial<DesktopUpdateState> = {}): DesktopUp
@@ -1121,7 +1124,7 @@ index 0d1ba39618..2e76f92d29 100644
      showDesktopUpdateDownloadedToast(
        { openExternal: vi.fn() },
 diff --git a/apps/web/src/components/desktopUpdate.toast.tsx b/apps/web/src/components/desktopUpdate.toast.tsx
-index 0c4991c172..79c1183924 100644
+index 0c4991c1..79c11839 100644
 --- a/apps/web/src/components/desktopUpdate.toast.tsx
 +++ b/apps/web/src/components/desktopUpdate.toast.tsx
 @@ -3,7 +3,7 @@ import { ArrowRightIcon } from "lucide-react";
@@ -1155,7 +1158,7 @@ index 0c4991c172..79c1183924 100644
      ),
 diff --git a/apps/web/src/components/forkHub.logic.test.ts b/apps/web/src/components/forkHub.logic.test.ts
 new file mode 100644
-index 0000000000..24484538b4
+index 00000000..24484538
 --- /dev/null
 +++ b/apps/web/src/components/forkHub.logic.test.ts
 @@ -0,0 +1,70 @@
@@ -1231,7 +1234,7 @@ index 0000000000..24484538b4
 +});
 diff --git a/apps/web/src/components/forkHub.logic.ts b/apps/web/src/components/forkHub.logic.ts
 new file mode 100644
-index 0000000000..b15b9ccb42
+index 00000000..b15b9ccb
 --- /dev/null
 +++ b/apps/web/src/components/forkHub.logic.ts
 @@ -0,0 +1,98 @@
@@ -1334,7 +1337,7 @@ index 0000000000..b15b9ccb42
 +  return { owner, repo, releaseCount: releases.length, latestTag };
 +}
 diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
-index bb3ba34cbc..48f1ddde5a 100644
+index f0a91139..09a2d248 100644
 --- a/apps/web/src/components/settings/SettingsPanels.tsx
 +++ b/apps/web/src/components/settings/SettingsPanels.tsx
 @@ -56,6 +56,12 @@ import {
@@ -1557,10 +1560,10 @@ index bb3ba34cbc..48f1ddde5a 100644
          <SettingsRow
            title="Update track"
 diff --git a/apps/web/src/components/sidebar/SidebarChrome.tsx b/apps/web/src/components/sidebar/SidebarChrome.tsx
-index c956ab0a63..799773484a 100644
+index af4bd8a1..6445737c 100644
 --- a/apps/web/src/components/sidebar/SidebarChrome.tsx
 +++ b/apps/web/src/components/sidebar/SidebarChrome.tsx
-@@ -5,6 +5,7 @@ import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-ro
+@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
  
  import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
  import { cn } from "../../lib/utils";
@@ -1568,7 +1571,7 @@ index c956ab0a63..799773484a 100644
  import { useEnvironments } from "../../state/environments";
  import { T3Wordmark } from "../T3Wordmark";
  import {
-@@ -79,9 +80,11 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
+@@ -76,9 +77,11 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
  });
  
  function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
@@ -1581,7 +1584,7 @@ index c956ab0a63..799773484a 100644
        className={cn(
          "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
          onBackdrop ? "text-white" : "text-foreground",
-@@ -99,6 +102,17 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+@@ -96,6 +99,17 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
          >
            Code
          </span>
@@ -1600,7 +1603,7 @@ index c956ab0a63..799773484a 100644
      </Link>
    );
 diff --git a/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx b/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
-index d3c6f368a5..438e229830 100644
+index d3c6f368..438e2298 100644
 --- a/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
 +++ b/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
 @@ -11,6 +11,8 @@ const nightlyState: DesktopUpdateState = {
@@ -1630,7 +1633,7 @@ index d3c6f368a5..438e229830 100644
      expect(
        shouldUseSidebarUpdateReleaseNotesPopover(true, {
 diff --git a/apps/web/src/components/sidebar/SidebarUpdatePill.tsx b/apps/web/src/components/sidebar/SidebarUpdatePill.tsx
-index f8f61f5210..9e04bd1b85 100644
+index e9ba2683..1adca9f4 100644
 --- a/apps/web/src/components/sidebar/SidebarUpdatePill.tsx
 +++ b/apps/web/src/components/sidebar/SidebarUpdatePill.tsx
 @@ -40,7 +40,11 @@ export function shouldUseSidebarUpdateReleaseNotesPopover(
@@ -1647,7 +1650,7 @@ index f8f61f5210..9e04bd1b85 100644
  
  export function handleSidebarUpdateReleaseNotesPopoverOpenChange(
 diff --git a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
-index d229e2d3ca..368df9b722 100644
+index d229e2d3..368df9b7 100644
 --- a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
 +++ b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
 @@ -22,6 +22,8 @@ const baseState: DesktopUpdateState = {
@@ -1660,7 +1663,7 @@ index d229e2d3ca..368df9b722 100644
    hostArch: "arm64",
    appArch: "arm64",
 diff --git a/apps/web/src/state/desktopUpdate.test.ts b/apps/web/src/state/desktopUpdate.test.ts
-index f3e7818ed5..aab89c86f7 100644
+index f3e7818e..aab89c86 100644
 --- a/apps/web/src/state/desktopUpdate.test.ts
 +++ b/apps/web/src/state/desktopUpdate.test.ts
 @@ -9,6 +9,8 @@ const baseState: DesktopUpdateState = {
@@ -1673,10 +1676,10 @@ index f3e7818ed5..aab89c86f7 100644
    hostArch: "x64",
    appArch: "x64",
 diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
-index c67ecd27c0..5c7db916f7 100644
+index 7caf6d1c..16253a7c 100644
 --- a/packages/contracts/src/ipc.ts
 +++ b/packages/contracts/src/ipc.ts
-@@ -85,7 +85,7 @@ export type DesktopUpdateStatus =
+@@ -89,7 +89,7 @@ export type DesktopUpdateStatus =
  
  export type DesktopRuntimeArch = "arm64" | "x64" | "other";
  export type DesktopTheme = "light" | "dark" | "system";
@@ -1685,7 +1688,7 @@ index c67ecd27c0..5c7db916f7 100644
  export type DesktopAppStageLabel = "Alpha" | "Dev" | "Nightly";
  
  export const DesktopUpdateStatusSchema = Schema.Literals([
-@@ -100,7 +100,17 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
+@@ -104,7 +104,17 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
  ]);
  export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
  export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
@@ -1704,7 +1707,7 @@ index c67ecd27c0..5c7db916f7 100644
  export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Dev", "Nightly"]);
  
  export interface DesktopAppBranding {
-@@ -276,6 +286,8 @@ export interface DesktopUpdateState {
+@@ -280,6 +290,8 @@ export interface DesktopUpdateState {
    enabled: boolean;
    status: DesktopUpdateStatus;
    channel: DesktopUpdateChannel;
@@ -1713,7 +1716,7 @@ index c67ecd27c0..5c7db916f7 100644
    currentVersion: string;
    hostArch: DesktopRuntimeArch;
    appArch: DesktopRuntimeArch;
-@@ -307,6 +319,8 @@ export const DesktopUpdateStateSchema = Schema.Struct({
+@@ -311,6 +323,8 @@ export const DesktopUpdateStateSchema = Schema.Struct({
    enabled: Schema.Boolean,
    status: DesktopUpdateStatusSchema,
    channel: DesktopUpdateChannelSchema,
@@ -1722,7 +1725,7 @@ index c67ecd27c0..5c7db916f7 100644
    currentVersion: Schema.String,
    hostArch: DesktopRuntimeArchSchema,
    appArch: DesktopRuntimeArchSchema,
-@@ -1233,6 +1247,10 @@ export interface DesktopBridge {
+@@ -1238,6 +1252,10 @@ export interface DesktopBridge {
    onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
    getUpdateState: () => Promise<DesktopUpdateState>;
    setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
@@ -1734,7 +1737,7 @@ index c67ecd27c0..5c7db916f7 100644
    downloadUpdate: () => Promise<DesktopUpdateActionResult>;
    installUpdate: () => Promise<DesktopUpdateActionResult>;
 diff --git a/scripts/build-desktop-artifact.test.ts b/scripts/build-desktop-artifact.test.ts
-index 05fc0baa45..8eeacfb18c 100644
+index 4e97301d..c5dca377 100644
 --- a/scripts/build-desktop-artifact.test.ts
 +++ b/scripts/build-desktop-artifact.test.ts
 @@ -251,6 +251,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
@@ -1751,15 +1754,15 @@ index 05fc0baa45..8eeacfb18c 100644
  
    it("switches desktop packaging product names to nightly for nightly builds", () => {
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 02e514d83f..a665502e57 100644
+index d2d9df76..0c6c8833 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
-@@ -2537,3 +2537,3 @@ export function resolveDesktopRuntimeDependencies(
+@@ -2538,3 +2538,3 @@ export function resolveDesktopRuntimeDependencies(
  export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
 -  updateChannel: "latest" | "nightly",
 +  updateChannel: "latest" | "nightly" | "forkhub",
  ) {
-@@ -2563,3 +2563,6 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
+@@ -2564,3 +2564,6 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
  export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
 -  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
 +  // ForkHub builds keep the upstream train plus a `.fh.<owner>.<n>`
@@ -1767,7 +1770,7 @@ index 02e514d83f..a665502e57 100644
 +  // the base version.
 +  return /-nightly\.\d{8}\.\d+(?:\.fh\.[a-z0-9-]+\.\d+)?$/.test(version) ? "nightly" : "latest";
  }
-@@ -2582,2 +2585,11 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
+@@ -2583,2 +2586,11 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
  export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
 +  // ForkHub keeps its own identity on every train: a nightly-based ForkHub
 +  // build must not wear upstream nightly's icons.
@@ -1779,7 +1782,7 @@ index 02e514d83f..a665502e57 100644
 +    };
 +  }
    if (resolveDesktopUpdateChannel(version) === "nightly") {
-@@ -2614,3 +2626,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
+@@ -2615,3 +2627,10 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
  
 +export function isForkHubDesktopBuild(): boolean {
 +  return process.env.T3CODE_FORKHUB_BUILD?.trim() === "1";

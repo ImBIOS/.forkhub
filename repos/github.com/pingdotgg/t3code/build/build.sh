@@ -154,12 +154,44 @@ rm -rf "$DIST/forkhub" 2>/dev/null || true
 build_cli_archive() {
   RMDIR="${RUNNER_TEMP:-/tmp}/cli-resource-monitor"
   mkdir -p "$RMDIR/linux-x64" "$DIST/cli-build"
-  RM_BIN="native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor"
-  if [ ! -x "$RM_BIN" ]; then
-    cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml >>"$LOG" 2>&1 || return 1
+  # Upstream builds with --target (triple-prefixed dir); a plain cargo build
+  # lands in target/release instead. Accept either.
+  RM_TRIPLE="native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor"
+  RM_PLAIN="native/resource-monitor/target/release/t3-resource-monitor"
+  if [ ! -x "$RM_TRIPLE" ]; then
+    (rustup target add x86_64-unknown-linux-gnu >>"$LOG" 2>&1 || true)
+    (cargo build --locked --release --target x86_64-unknown-linux-gnu \
+      --manifest-path native/resource-monitor/Cargo.toml >>"$LOG" 2>&1) || true
+  fi
+  if [ -x "$RM_TRIPLE" ]; then
+    RM_BIN="$RM_TRIPLE"
+  elif [ -x "$RM_PLAIN" ]; then
+    RM_BIN="$RM_PLAIN"
+  else
+    (cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml >>"$LOG" 2>&1) || return 1
+    RM_BIN="$RM_PLAIN"
+    [ -x "$RM_BIN" ] || return 1
   fi
   cp "$RM_BIN" "$RMDIR/linux-x64/t3-resource-monitor" || return 1
-  VP_NODE_VERSION="26.8.2" node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose >>"$LOG" 2>&1 || return 1
+  # The single-executable injects into its own Node, so it must run under
+  # Node 25.7+ even though the repo stays on engines node 24 (same split as
+  # upstream, whose setup-vp action provisions it; here we fetch the exact
+  # build upstream pins).
+  NODE26_DIR="${RUNNER_TEMP:-/tmp}/forkhub-node26"
+  if [ ! -x "$NODE26_DIR/node-v26.8.2-linux-x64/bin/node" ]; then
+    mkdir -p "$NODE26_DIR"
+    curl -fsSL "https://nodejs.org/download/release/v26.8.2/node-v26.8.2-linux-x64.tar.xz" \
+      | tar -xJ -C "$NODE26_DIR" >>"$LOG" 2>&1 || return 1
+  fi
+  OLD_PATH="$PATH"
+  export PATH="$NODE26_DIR/node-v26.8.2-linux-x64/bin:$PATH"
+  # VP_NODE_VERSION mirrors upstream (their setup-vp honors it); the PATH
+  # above is what actually switches the runtime here.
+  VP_NODE_VERSION="26.8.2" node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose >>"$LOG" 2>&1 || {
+    export PATH="$OLD_PATH"
+    return 1
+  }
+  export PATH="$OLD_PATH"
   node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$FH_VERSION" \
     --resource-monitor-dir "$RMDIR" --output-dir "$DIST/cli-build" >>"$LOG" 2>&1 || return 1
   node scripts/smoke-cli-archive.ts --archive "$DIST"/cli-build/* --expect-version "$FH_VERSION" >>"$LOG" 2>&1 || return 1
@@ -170,6 +202,9 @@ build_cli_archive() {
 if build_cli_archive; then
   say "t3 CLI archive ok: $(ls "$DIST"/t3-*.tar.gz 2>/dev/null)"
 else
+  # Never leave the staging dir behind: the shared checksum step chokes on
+  # directories (same class of bug as dist/forkhub before it).
+  rm -rf "$DIST/cli-build" 2>/dev/null || true
   say "BUILD-SOFT-WARN: t3 CLI archive failed (see log above); desktop artifacts unaffected"
 fi
 # electron-builder names updater manifests after the version's channel

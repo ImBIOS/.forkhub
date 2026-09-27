@@ -1,8 +1,16 @@
-## T3 Code x ForkHub — use this build (stable + nightly trains)
+## T3 Code x ForkHub — use this build (nightly train)
 
 Patched T3 Code that updates from a ForkHub channel instead of upstream.
-This channel follows upstream stable and nightly: steady releases plus a
-fresh build most days. The ForkHub track installs either train.
+This channel follows upstream nightly: expect a fresh build most days.
+
+Headless CLI as `fh-t3` without touching npmjs: this release also
+attaches `imbios-fh-t3-<version>.tgz` (an installable npm tarball, bin
+`fh-t3`, same tree as the `t3-*-linux-x64` archive). Run it straight
+from this page:
+
+```bash
+pnpx <asset-URL-copied-from-this-release>
+```
 
 1. **Install** the `T3-Code-*-x64.AppImage` below (Linux; macOS/Windows
    build locally — see `build/BUILD.md`). It installs side-by-side with

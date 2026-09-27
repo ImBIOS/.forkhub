@@ -102,11 +102,14 @@ patched install is never mistaken for stock.
   The running app brands itself from the same suffix
   (`resolveDesktopAppBranding` → "T3 Code x ForkHub" display name), so no
   build-time flag can get lost between CI and the user's machine.
-- CLI (`t3 update`) needs no code changes: `build.sh` ships the
-  linux-x64 archive (`t3-<version>-linux-x64.tar.gz` + `SHA256SUMS`) on
-  the updater release, so `T3CODE_RELEASE_BASE_URL=<catalog>/releases/download
-  t3 update <exact-version>` pins the standalone CLI — the piece T3
-  Connect hosts are set up through — to the desktop. Channel
-  auto-discovery still points upstream (exact versions only for now);
-  linux-arm64/macOS/Windows archives need native runners (see
-  `build/BUILD.md`).
+- CLI needs no code changes: `build.sh` ships the linux-x64 archive
+  (`t3-<version>-linux-x64.tar.gz` + `SHA256SUMS`) plus an installable npm
+  tarball (`imbios-fh-t3-<version>.tgz`, package `@imbios/fh-t3`, bin
+  `fh-t3`, same tree) on the updater release — so `pnpx <asset-URL>`
+  runs the ForkHub CLI with no registry involved, and
+  `T3CODE_RELEASE_BASE_URL=<catalog>/releases/download t3 update
+  <exact-version>` pins a standalone install (the piece T3 Connect hosts
+  are set up through) to the desktop. Channel auto-discovery still points
+  upstream (exact versions only for now); linux-arm64/macOS/Windows
+  archives need native runners (see `build/BUILD.md`). The catalog
+  follows nightly only for now; stable building is disabled.

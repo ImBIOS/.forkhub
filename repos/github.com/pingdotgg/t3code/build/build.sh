@@ -197,6 +197,20 @@ build_cli_archive() {
   node scripts/smoke-cli-archive.ts --archive "$DIST"/cli-build/* --expect-version "$FH_VERSION" >>"$LOG" 2>&1 || return 1
   mv "$DIST"/cli-build/* "$DIST"/ || return 1
   rm -rf "$DIST/cli-build" 2>/dev/null || true
+  # npm-installable tarball (@imbios/fh-t3, bin fh-t3) so the CLI runs via
+  # `pnpx <release-asset-URL>` with no registry involved. Same tree as the
+  # archive, repacked with a package.json; the binary is renamed in place
+  # (adjacency to client/, node_modules preserved) and smoke-checked
+  # through the new name.
+  PKGROOT="$(mktemp -d)"
+  PKGDIR="$PKGROOT/package"
+  mkdir -p "$PKGDIR"
+  tar -xzf "$DIST"/t3-*.tar.gz -C "$PKGDIR" --strip-components=1 || { rm -rf "$PKGROOT"; return 1; }
+  mv "$PKGDIR/t3" "$PKGDIR/fh-t3" || { rm -rf "$PKGROOT"; return 1; }
+  node -e "process.stdout.write(JSON.stringify({name:'@imbios/fh-t3',version:'$FH_VERSION',description:'T3 Code x ForkHub CLI',bin:{'fh-t3':'./fh-t3'}},null,2))" > "$PKGDIR/package.json" || { rm -rf "$PKGROOT"; return 1; }
+  "$PKGDIR/fh-t3" --version 2>&1 | grep -qF "$FH_VERSION" || { rm -rf "$PKGROOT"; return 1; }
+  tar -czf "$DIST/imbios-fh-t3-$FH_VERSION.tgz" -C "$PKGROOT" package || { rm -rf "$PKGROOT"; return 1; }
+  rm -rf "$PKGROOT"
   return 0
 }
 if build_cli_archive; then

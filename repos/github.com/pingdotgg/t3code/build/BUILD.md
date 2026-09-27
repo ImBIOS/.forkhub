@@ -16,7 +16,12 @@ bleeding-edge users alike.
    via apt — mirroring upstream `release.yml` plus the AppImage
    prerequisites (`docs/operations/development.md#linux-appimage-prerequisites`).
 2. Installs workspace deps (`pnpm install --ignore-scripts`).
-3. Builds the **Linux x64 AppImage, unsigned**, with:
+3. Stamps the workspace package versions to the ForkHub version
+   (`update-release-package-versions.ts`, same as upstream
+   `release-desktop.yml`) — without this the built app reports the last
+   stable version, because upstream only bumps package.json on stables
+   and the web client bakes its displayed version at build time.
+4. Builds the **Linux x64 AppImage, unsigned**, with:
    - `T3CODE_FORKHUB_BUILD=1` → product name "T3 Code x ForkHub"
      (side-by-side with stock installs),
    - `T3CODE_DESKTOP_UPDATE_REPOSITORY=$GITHUB_REPOSITORY` → the emitted

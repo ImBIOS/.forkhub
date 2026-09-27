@@ -116,6 +116,13 @@ test -x node_modules/.bin/vp || pnpm install --ignore-scripts >>"$LOG" 2>&1 \
 export PATH="$PWD/node_modules/.bin:$PATH"
 command -v vp >/dev/null 2>&1 || fail_soft "vp not found after install"
 
+# --- stamp workspace versions (same as upstream release-desktop.yml) ---
+# The web client's displayed version is baked from apps/web/package.json at
+# vite build time, and upstream only bumps those files on stable releases —
+# without this, a nightly build reports the last stable version everywhere.
+node scripts/update-release-package-versions.ts "$FH_VERSION" >>"$LOG" 2>&1 \
+  || fail_soft "package version stamping failed"
+
 export T3CODE_FORKHUB_BUILD=1
 export T3CODE_DESKTOP_UPDATE_REPOSITORY="$REPO"
 say "product=T3 Code x ForkHub update_repo=$REPO"

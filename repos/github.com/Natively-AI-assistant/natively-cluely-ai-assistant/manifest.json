@@ -1,0 +1,13 @@
+{
+  "target_repo": "github.com/Natively-AI-assistant/natively-cluely-ai-assistant",
+  "upstream_main_branch": "main",
+  "upstream_remote": "upstream",
+  "fork_remote": "origin",
+  "is_fork": true,
+  "schedule": "on-upstream-release",
+  "token_budget_per_run": 100000,
+  "on_budget_exceed": "pause",
+  "patches": {},
+  "apply_order": [],
+  "slug_aliases": {}
+}

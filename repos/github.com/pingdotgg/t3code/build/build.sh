@@ -144,6 +144,34 @@ for f in "$DIST"/forkhub/*; do
 done
 rm -rf "$DIST/forkhub" 2>/dev/null || true
 [ "$MOVED" -gt 0 ] || fail_soft "artifact script produced no files"
+
+# --- t3 CLI archive (linux-x64) ---
+# Pinned installs (`t3 update`) fetch `t3-<version>-<platform>.tar.gz` plus
+# SHA256SUMS from under the release tag, so shipping the archive keeps the
+# standalone CLI (and T3 Connect hosts set up through it) version-pinned to
+# the desktop. Other platforms need native runners (see BUILD.md), and a CLI
+# failure must never fail the desktop build, so this is warn-and-continue.
+build_cli_archive() {
+  RMDIR="${RUNNER_TEMP:-/tmp}/cli-resource-monitor"
+  mkdir -p "$RMDIR/linux-x64" "$DIST/cli-build"
+  RM_BIN="native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor"
+  if [ ! -x "$RM_BIN" ]; then
+    cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml >>"$LOG" 2>&1 || return 1
+  fi
+  cp "$RM_BIN" "$RMDIR/linux-x64/t3-resource-monitor" || return 1
+  VP_NODE_VERSION="26.8.2" node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose >>"$LOG" 2>&1 || return 1
+  node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$FH_VERSION" \
+    --resource-monitor-dir "$RMDIR" --output-dir "$DIST/cli-build" >>"$LOG" 2>&1 || return 1
+  node scripts/smoke-cli-archive.ts --archive "$DIST"/cli-build/* --expect-version "$FH_VERSION" >>"$LOG" 2>&1 || return 1
+  mv "$DIST"/cli-build/* "$DIST"/ || return 1
+  rm -rf "$DIST/cli-build" 2>/dev/null || true
+  return 0
+}
+if build_cli_archive; then
+  say "t3 CLI archive ok: $(ls "$DIST"/t3-*.tar.gz 2>/dev/null)"
+else
+  say "BUILD-SOFT-WARN: t3 CLI archive failed (see log above); desktop artifacts unaffected"
+fi
 # electron-builder names updater manifests after the version's channel
 # (latest-*.yml for stable, nightly-*.yml for nightly). The ForkHub track
 # always polls the `latest` manifests, so alias whichever train was built

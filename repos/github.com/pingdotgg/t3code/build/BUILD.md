@@ -21,14 +21,23 @@ bleeding-edge users alike.
    `release-desktop.yml`) — without this the built app reports the last
    stable version, because upstream only bumps package.json on stables
    and the web client bakes its displayed version at build time.
-4. Builds the **Linux x64 AppImage, unsigned**, with:
-   - `T3CODE_FORKHUB_BUILD=1` → product name "T3 Code x ForkHub"
-     (side-by-side with stock installs),
-   - `T3CODE_DESKTOP_UPDATE_REPOSITORY=$GITHUB_REPOSITORY` → the emitted
-     `latest-linux.yml` points electron-updater at this catalog repo.
-3. Copies the produced artifacts (AppImage, `latest-linux.yml`, blockmap)
-   plus `BUILD_LOG.md` into `$GITHUB_WORKSPACE/dist`.
-4. Never fails the job: on any failure it packs a patched-source
+4. Builds the **t3 CLI archive for linux-x64** (`t3-<version>-linux-x64.tar.gz`,
+   smoke-tested): pinned `t3 update` installs resolve the archive plus
+   `SHA256SUMS` from under the release tag, so the standalone CLI — the
+   piece T3 Connect hosts are set up through — stays version-pinned to
+   the desktop. linux-arm64/macOS/Windows archives need native runners
+   (upstream builds each platform on its own hardware, and node-pty has
+   no Linux prebuild to cross-compile against); until the matrix grows
+   them, those platforms stay on upstream CLI builds. A CLI failure
+   warns and continues — it never fails the desktop build.
+ 5. Builds the **Linux x64 AppImage, unsigned**, with:
+    - `T3CODE_FORKHUB_BUILD=1` → product name "T3 Code x ForkHub"
+      (side-by-side with stock installs),
+    - `T3CODE_DESKTOP_UPDATE_REPOSITORY=$GITHUB_REPOSITORY` → the emitted
+      `latest-linux.yml` points electron-updater at this catalog repo.
+ 6. Copies the produced artifacts (AppImage, updater manifests, CLI
+    archive, blockmap) plus `BUILD_LOG.md` into `$GITHUB_WORKSPACE/dist`.
+ 7. Never fails the job: on any failure it packs a patched-source
    tarball (patched tree minus `node_modules`/`dist`/`.git`), logs, and
    exits 0. Empty `dist/` falls back to the shared patched-source
    tarball; either way the updater release is skipped by `publish.sh`

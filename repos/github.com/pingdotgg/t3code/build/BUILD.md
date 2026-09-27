@@ -74,6 +74,14 @@ before creating it. ForkHub builds always wear production icons
 - **Tag selection.** `upstream.json:tag_ignore_pattern` keeps the shared
   clone step on the stable train (upstream tags are mostly `-preview`
   maintainer cuts). If upstream changes tagging, update the pattern.
+- **Machine-sync loop (standing rule).** Every app-affecting intent
+  change ships to ImBIOS's machine the same day, always from GitHub
+  Actions, never from a local build: push the intent → let the nightly
+  train build (force-dispatch with `train=nightly, force=true` when the
+  tag already has a release) → download the AppImage → verify size +
+  SHA512 against its `latest-linux.yml` → replace the file in
+  `~/Applications` → confirm the single launcher entry. The installed
+  build is the dogfood proof; keep it current.
 - **Known drift risk.** `reference.diff` tracks the newest train; older
   trains whose trees drifted carry `reference.<train>.diff` (currently
   `reference.stable.diff`, verified on upstream v0.0.42) and the build

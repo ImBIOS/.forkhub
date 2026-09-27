@@ -105,8 +105,9 @@ patched install is never mistaken for stock.
 - CLI needs no code changes: `build.sh` ships the linux-x64 archive
   (`t3-<version>-linux-x64.tar.gz` + `SHA256SUMS`) plus an installable npm
   tarball (`imbios-fh-t3-<version>.tgz`, package `@imbios/fh-t3`, bin
-  `fh-t3`, same tree) on the updater release — so `pnpx <asset-URL>`
-  runs the ForkHub CLI with no registry involved, and
+  `t3`, same tree) on the updater release — so `pnpx <asset-URL>` (or
+  `fh run t3 ImBIOS`, which resolves the same asset) runs the ForkHub CLI
+  with no registry involved, and
   `T3CODE_RELEASE_BASE_URL=<catalog>/releases/download t3 update
   <exact-version>` pins a standalone install (the piece T3 Connect hosts
   are set up through) to the desktop. Channel auto-discovery still points

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://github.com/ImBIOS/.forkhub/blob/main/registry.schema.json",
+  "packages": {
+    "t3": {
+      "target": "github.com/pingdotgg/t3code",
+      "description": "T3 Code x ForkHub headless CLI",
+      "bin": "t3",
+      "binPath": "package/t3",
+      "defaultChannel": "nightly",
+      "asset": "{owner}-fh-t3-{version}.tgz",
+      "platforms": ["linux-x64"],
+      "channels": {
+        "nightly": {
+          "tagMatch": "-nightly\\.[0-9]{8}\\."
+        },
+        "stable": {
+          "tagMatch": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    }
+  }
+}

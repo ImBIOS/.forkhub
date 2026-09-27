@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "forkhub package registry",
+  "type": "object",
+  "required": ["packages"],
+  "properties": {
+    "packages": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["target", "bin", "defaultChannel", "asset", "channels"],
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Upstream repo as <host>/<owner>/<repo>, mirroring repos/ layout."
+          },
+          "description": { "type": "string" },
+          "bin": {
+            "type": "string",
+            "description": "Binary name to execute from the extracted tree."
+          },
+          "binPath": {
+            "type": "string",
+            "default": "package/<bin>",
+            "description": "Path of the binary inside the extracted tarball."
+          },
+          "defaultChannel": { "type": "string" },
+          "asset": {
+            "type": "string",
+            "description": "Asset filename template. {owner} = catalog owner, {version} = release version without leading v."
+          },
+          "platforms": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Supported <os>-<arch> keys. Omitted means any."
+          },
+          "channels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["tagMatch"],
+              "properties": {
+                "tagMatch": {
+                  "type": "string",
+                  "description": "ERE matched against release tag names (grep -E semantics)."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

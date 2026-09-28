@@ -199,7 +199,7 @@ jobs:
           dispatch_reimplement() {
             patch_id="$1"
             phase="$2"
-            if gh issue list --repo "$GITHUB_REPOSITORY" --state open --label needs-human-decision               --search "in:title \"$patch_id\" drift" --json number --jq -e '.[0].number' >/dev/null 2>&1; then
+            if gh issue list --repo "$GITHUB_REPOSITORY" --state open --label needs-human-decision               --search "in:title $patch_id" --json number --jq -e '.[0].number' >/dev/null 2>&1; then
               echo "needs-human-decision issue already open for $patch_id; not dispatching"
               return 0
             fi

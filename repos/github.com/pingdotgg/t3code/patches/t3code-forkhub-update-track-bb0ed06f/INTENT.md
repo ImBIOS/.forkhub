@@ -1,11 +1,11 @@
 ---
 id: t3code-forkhub-update-track-bb0ed06f
-title: T3 Code "ForkHub" update track with per-owner channel, x ForkHub brand, update-all nudge, and side-by-side isolation
+title: T3 Code ForkHub publisher model with per-publisher trains, x ForkHub brand, update-all nudge, and side-by-side isolation
 target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 9
+version: 10
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -133,3 +133,14 @@ patched install is never mistaken for stock.
    survive the switch. Backend identity, credentials, and server settings
    stay fresh per install. A marker file makes it run once; deleting the
    ForkHub home re-arms it.
+
+8. **Publisher model, no ForkHub track.** A ForkHub build is ForkHub by
+   version provenance (`.fh.<owner>.<n>`), never by channel: the update
+   track stays latest/nightly and selects which train of the publisher's
+   `.forkhub` catalog to follow. The retired `forkhub` track value migrates
+   to nightly with the publisher preserved. Check reports which trains a
+   publisher serves (stable, nightly, both, or invalid). Fresh ForkHub
+   homes prefill publisher `with-fh`. Nightly-based ForkHub builds wear
+   nightly desktop icons. Provenance and cross-install rules: `.fh`
+   versions install on ForkHub builds only, on either track; stock builds
+   never flow into ForkHub installs and vice versa.

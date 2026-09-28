@@ -5,7 +5,7 @@ after the intent stack is applied and `verify.sh` passes. This catalog
 follows upstream **nightly only** (`upstream.json:trains`; stable building
 is disabled while the channel focuses on nightly + intent-patches); each
 build carries its train's upstream version plus provenance (e.g.
-`0.0.43-nightly.20260924.2187.fh.imbios.1`).
+`0.0.43-nightly.20260924.2187.fh.with-fh.1`).
 
 ## What `build.sh` does
 
@@ -57,7 +57,7 @@ Versions are `<upstream><joiner><suffix>.<owner>.<n>` (suffix from
 existing updater releases so force-rebuilds advance). The joiner is `.`
 after an existing prerelease part, `-` on a bare base — the result MUST
 stay valid semver: electron-builder silently mangles invalid versions
-(`0.0.42.fh.imbios.1` once shipped as `0.0.4-2.fh.imbios.1`). The
+(`0.0.42.fh.with-fh.1` once shipped as `0.0.4-2.fh.with-fh.1`). The
 extension keeps train ordering (nightly dates still compare) while
 advertising the fork — and it reads as an upgrade over the same-base
 upstream build, so switching tracks offers the ForkHub build.

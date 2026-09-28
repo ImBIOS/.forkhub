@@ -54,3 +54,8 @@ sh repos/github.com/pingdotgg/t3code/patches/t3code-forkhub-update-track-bb0ed06
     Check reports stable/nightly/both/neither trains; fresh ForkHub homes
     default to publisher `with-fh`; `.fh` versions install on ForkHub
     builds only.
+
+11. **Trains-gated tracks**: with trains stored, the selector offers only
+    served trains; Check persists trains; boot discovers them once;
+    unsupported selected tracks migrate (`updateChannels`,
+    `DesktopAppSettings`, `DesktopUpdates`, `SettingsPanels` suites).

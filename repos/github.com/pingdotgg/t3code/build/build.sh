@@ -226,14 +226,17 @@ build_cli_archive() {
   PKGDIR="$PKGROOT/package"
   mkdir -p "$PKGDIR"
   tar -xzf "$DIST"/t3-*.tar.gz -C "$PKGDIR" --strip-components=1 || { rm -rf "$PKGROOT"; return 1; }
-  node -e "process.stdout.write(JSON.stringify({name:'@imbios/fh-t3',version:'$FH_VERSION',description:'T3 Code x ForkHub CLI',bin:{'t3':'./t3'}},null,2))" > "$PKGDIR/package.json" || { rm -rf "$PKGROOT"; return 1; }
-  tar -czf "$DIST/imbios-fh-t3-$FH_VERSION.tgz" -C "$PKGROOT" package || { rm -rf "$PKGROOT"; return 1; }
+  node -e "process.stdout.write(JSON.stringify({name:'@with-fh/fh-t3',version:'$FH_VERSION',description:'T3 Code x ForkHub CLI',bin:{'t3':'./t3'}},null,2))" > "$PKGDIR/package.json" || { rm -rf "$PKGROOT"; return 1; }
+  tar -czf "$DIST/with-fh-fh-t3-$FH_VERSION.tgz" -C "$PKGROOT" package || { rm -rf "$PKGROOT"; return 1; }
   rm -rf "$PKGROOT"
-  tar -tzf "$DIST/imbios-fh-t3-$FH_VERSION.tgz" | grep -qx 'package/package.json' || return 1
+  tar -tzf "$DIST/with-fh-fh-t3-$FH_VERSION.tgz" | grep -qx 'package/package.json' || return 1
+  # The raw archive was only the repack source: the published CLI is the
+  # tgz (`pnpx <url>`, `fh run`), so the tarball leaves nothing behind.
+  rm -f "$DIST"/t3-*.tar.gz "$DIST"/t3-*.zip || return 1
   return 0
 }
 if build_cli_archive; then
-  say "t3 CLI archive ok: $(ls "$DIST"/t3-*.tar.gz 2>/dev/null)"
+  say "t3 CLI tgz ok: $(ls "$DIST"/with-fh-fh-t3-*.tgz 2>/dev/null)"
 else
   # Never leave the staging dir behind: the shared checksum step chokes on
   # directories (same class of bug as dist/forkhub before it).

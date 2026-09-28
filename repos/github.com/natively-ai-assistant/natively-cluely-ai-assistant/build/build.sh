@@ -95,11 +95,12 @@ else
   say "cargo $(cargo --version) installed"
 fi
 
-# --- toolchain: native build headers (keytar links libsecret on Linux) ---
+# --- toolchain: native build headers (keytar links libsecret on Linux;
+# cpal links ALSA for microphone/speaker capture) ---
 if command -v apt-get >/dev/null 2>&1; then
   say "installing native build prerequisites"
   sudo apt-get update >>"$LOG" 2>&1 || say "apt-get update failed; continuing"
-  sudo apt-get install -y build-essential python3 pkg-config libsecret-1-dev >>"$LOG" 2>&1 \
+  sudo apt-get install -y build-essential python3 pkg-config libsecret-1-dev libasound2-dev >>"$LOG" 2>&1 \
     || say "prerequisite install failed; the build will say if it mattered"
 fi
 

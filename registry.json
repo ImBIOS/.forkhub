@@ -1,5 +1,5 @@
 {
-  "$schema": "https://github.com/ImBIOS/.forkhub/blob/main/registry.schema.json",
+  "$schema": "https://github.com/with-fh/.forkhub/blob/main/registry.schema.json",
   "packages": {
     "t3": {
       "target": "github.com/pingdotgg/t3code",

@@ -199,13 +199,13 @@ jobs:
           dispatch_reimplement() {
             patch_id="$1"
             phase="$2"
-            if gh issue list --repo "$GITHUB_REPOSITORY" --state open --label needs-human-decision               --search "in:title [$patch_id] drift" --json number --jq -e '.[0].number' >/dev/null 2>&1; then
+            if gh issue list --repo "$GITHUB_REPOSITORY" --state open --label needs-human-decision               --search "in:title \"$patch_id\" drift" --json number --jq -e '.[0].number' >/dev/null 2>&1; then
               echo "needs-human-decision issue already open for $patch_id; not dispatching"
               return 0
             fi
             echo "dispatching forkhub reimplement for $patch_id @ $UP ($phase failure)"
             gh workflow run "forkhub reimplement" --repo "$GITHUB_REPOSITORY" \
-              -f target="${{ matrix.pair.target }}" -f patch="$patch_id" -f tag="$UP" || true
+              -f target="${{ matrix.pair.target }}" -f patch="$patch_id" -f tag="$UPSTREAM_TAG" || true
           }
 
           set -euo pipefail
@@ -234,7 +234,7 @@ jobs:
               continue
             fi
             if ! git -C "$BD" apply --check "$CLEAN"; then
-              echo "::error::$id no longer applies to $UP — drift detected"
+              echo "::error::$id no longer applies to $UPSTREAM_TAG — drift detected"
               dispatch_reimplement "$id" "apply"
               exit 1
             fi
@@ -242,7 +242,7 @@ jobs:
             # -f (not -x): verify.sh files are checked in non-executable.
             if [ -f "$p/verify.sh" ]; then
               if ! (cd "$BD" && sh "$p/verify.sh"); then
-                echo "::error::$id verify failed on $UP — drift detected"
+                echo "::error::$id verify failed on $UPSTREAM_TAG — drift detected"
                 dispatch_reimplement "$id" "verify"
                 exit 1
               fi

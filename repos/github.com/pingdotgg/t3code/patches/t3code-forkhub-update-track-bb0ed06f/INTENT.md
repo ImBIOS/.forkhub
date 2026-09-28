@@ -1,11 +1,11 @@
 ---
 id: t3code-forkhub-update-track-bb0ed06f
-title: T3 Code "ForkHub" update track with per-owner channel, x ForkHub brand, and update-all nudge
+title: T3 Code "ForkHub" update track with per-owner channel, x ForkHub brand, update-all nudge, and side-by-side isolation
 target_repo: github.com/pingdotgg/t3code
-target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts]
+target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts]
 status: applied
 applied_upstream_pr: none
-version: 7
+version: 8
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -51,7 +51,7 @@ patched install is never mistaken for stock.
    non-draft release. A bare account or an empty catalog is rejected with a
    message saying so. Private catalogs are not supported: the check is
    unauthenticated, so only discoverable public releases count.
-4. **Side-by-side installs.** ForkHub builds (`T3CODE_FORKHUB_BUILD=1`) are
+4. **Side-by-side installs.** ForkHub builds (derived from the version provenance suffix, no build-time flag) are
    named "T3 Code x ForkHub" and the running app badges "x ForkHub" in the
    top-left brand whenever the ForkHub track is active — web sidebar and
    mobile brand mark.
@@ -114,3 +114,14 @@ patched install is never mistaken for stock.
   upstream (exact versions only for now); linux-arm64/macOS/Windows
   archives need native runners (see `build/BUILD.md`). The catalog
   follows nightly only for now; stable building is disabled.
+
+6. **Stock and ForkHub run side by side.** A ForkHub install keeps its
+   own backend home (`~/.t3-forkhub`), Electron profile
+   (`t3code-forkhub`), window class, OS app id, and Linux launcher entry,
+   so both apps launch together with no shared SQLite/service state, no
+   shared Chromium single-instance lock, and no launcher-entry clobbering.
+   Backend ports are already picked by free-port scan. An explicit
+   `T3CODE_HOME` still wins for both, deliberately. A
+   `desktop-settings.json` the ForkHub build cannot decode is quarantined
+   to a `.corrupt.bak` sidecar with a warning and startup continues on
+   defaults; stock keeps its historical silent-defaults behavior.

@@ -1277,10 +1277,10 @@ index cef90b29..da3b77d9 100644
              hostArch: "arm64",
              appArch: "arm64",
 diff --git a/apps/desktop/src/updates/DesktopUpdates.test.ts b/apps/desktop/src/updates/DesktopUpdates.test.ts
-index 9745662c..59c559f4 100644
+index 9745662c..fc6f294b 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.test.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.test.ts
-@@ -849,6 +849,93 @@ describe("DesktopUpdates", () => {
+@@ -849,6 +849,139 @@ describe("DesktopUpdates", () => {
      }),
    );
  
@@ -1317,7 +1317,7 @@ index 9745662c..59c559f4 100644
 +      env: { T3CODE_HOME: "" },
 +    });
 +    const originalFetch = globalThis.fetch;
-+    globalThis.fetch = (async () => ({
++    globalThis.fetch = (async (_url: unknown) => ({
 +      ok: true,
 +      status: 200,
 +      json: async () => [{ tag_name: "v0.0.43-nightly.20260928.2375.fh.with-fh.2" }],
@@ -1342,16 +1342,62 @@ index 9745662c..59c559f4 100644
 +    );
 +  });
 +
++  it.effect("prefers the catalog manifest over the tag scan", () => {
++    const harness = makeHarness({
++      appVersion: "0.0.43-nightly.20260928.2375.fh.with-fh.2",
++      env: { T3CODE_HOME: "" },
++    });
++    const originalFetch = globalThis.fetch;
++    globalThis.fetch = (async (url: unknown) => {
++      if (String(url).includes("/contents/")) {
++        return {
++          ok: true,
++          status: 200,
++          json: async () => ({
++            encoding: "base64",
++            content: Buffer.from(JSON.stringify({ trains: ["nightly"] })).toString("base64"),
++          }),
++        };
++      }
++      return {
++        ok: true,
++        status: 200,
++        json: async () => [
++          { tag_name: "v2.8.1-fh.with-fh.1" },
++          { tag_name: "v0.0.43-nightly.20260928.2375.fh.with-fh.2" },
++        ],
++      };
++    }) as unknown as typeof fetch;
++
++    return Effect.scoped(
++      Effect.gen(function* () {
++        const updates = yield* DesktopUpdates.DesktopUpdates;
++        yield* updates.configure;
++
++        const state = yield* updates.getState;
++        assert.equal(state.forkhubHasStableTrain, false);
++        assert.equal(state.forkhubHasNightlyTrain, true);
++      }),
++    ).pipe(
++      Effect.provide(Layer.merge(TestClock.layer(), harness.layer)),
++      Effect.ensuring(
++        Effect.sync(() => {
++          globalThis.fetch = originalFetch;
++        }),
++      ),
++    );
++  });
++
 +  it.effect("skips boot train discovery on an explicit home", () => {
 +    const harness = makeHarness({
 +      appVersion: "0.0.43-nightly.20260928.2375.fh.with-fh.2",
 +    });
 +    const originalFetch = globalThis.fetch;
 +    let fetched = false;
-+    globalThis.fetch = (async () => {
++    globalThis.fetch = (async (_url: unknown) => {
 +      fetched = true;
 +      return { ok: true, status: 200, json: async () => [] };
-+    }) as typeof fetch;
++    }) as unknown as typeof fetch;
 +
 +    return Effect.scoped(
 +      Effect.gen(function* () {
@@ -1375,7 +1421,7 @@ index 9745662c..59c559f4 100644
      const diskFailure = new Error("disk exploded");
      const settingsFailure = new DesktopAppSettings.DesktopSettingsWriteError({
 diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
-index 245925a6..ac38ae48 100644
+index 245925a6..207facc2 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.ts
 @@ -1,6 +1,7 @@
@@ -1386,24 +1432,26 @@ index 245925a6..ac38ae48 100644
    type DesktopRuntimeInfo,
    type DesktopUpdateActionResult,
    type DesktopUpdateChannel,
-@@ -33,7 +34,15 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
+@@ -33,7 +34,17 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
  import * as IpcChannels from "../ipc/channels.ts";
  import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
  import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 -import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 +import {
++  FORKHUB_T3CODE_UPSTREAM_MANIFEST_PATH,
 +  isForkHubDerivedVersion,
 +  isVersionAllowedOnUpdateChannel,
 +  normalizeForkHubOwner,
 +  resolveCatalogTrains,
 +  resolveForkHubFeedConfig,
 +  resolveMigratedUpdateTrack,
++  resolveTrainsFromUpstreamManifest,
 +  type ForkHubCatalogTrains,
 +} from "./updateChannels.ts";
  import {
    createInitialDesktopUpdateState,
    reduceDesktopUpdateStateOnCheckFailure,
-@@ -181,6 +190,12 @@ export class DesktopUpdates extends Context.Service<
+@@ -181,6 +192,12 @@ export class DesktopUpdates extends Context.Service<
      readonly setChannel: (
        channel: DesktopUpdateChannel,
      ) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
@@ -1416,7 +1464,7 @@ index 245925a6..ac38ae48 100644
      readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
      readonly download: Effect.Effect<DesktopUpdateActionResult>;
      readonly install: Effect.Effect<DesktopUpdateActionResult>;
-@@ -215,9 +230,21 @@ function createBaseUpdateState(
+@@ -215,9 +232,21 @@ function createBaseUpdateState(
    channel: DesktopUpdateChannel,
    enabled: boolean,
    environment: DesktopEnvironment.DesktopEnvironment["Service"],
@@ -1439,7 +1487,7 @@ index 245925a6..ac38ae48 100644
      enabled,
      status: enabled ? "idle" : "disabled",
    };
-@@ -227,6 +254,37 @@ function getCanRetryFromState(state: DesktopUpdateState): boolean {
+@@ -227,6 +256,78 @@ function getCanRetryFromState(state: DesktopUpdateState): boolean {
    return state.availableVersion !== null || state.downloadedVersion !== null;
  }
  
@@ -1450,6 +1498,13 @@ index 245925a6..ac38ae48 100644
 +  repo: DesktopForkHubRepo,
 +): Effect.Effect<ForkHubCatalogTrains, Error> {
 +  return Effect.gen(function* () {
++    // Authoritative first: the catalog manifest declares per-target trains
++    // (`trains: ["nightly"]`), so other targets' releases in the same repo
++    // can never leak a phantom train into this app's track list.
++    const manifestTrains = yield* fetchTrainsFromUpstreamManifest(owner, repo).pipe(
++      Effect.option,
++    );
++    if (Option.isSome(manifestTrains)) return manifestTrains.value;
 +    const response = yield* Effect.tryPromise({
 +      try: () =>
 +        fetch(
@@ -1474,10 +1529,44 @@ index 245925a6..ac38ae48 100644
 +  }).pipe(Effect.timeout("15 seconds"));
 +}
 +
++function fetchTrainsFromUpstreamManifest(
++  owner: string,
++  repo: DesktopForkHubRepo,
++): Effect.Effect<ForkHubCatalogTrains, Error> {
++  return Effect.gen(function* () {
++    const response = yield* Effect.tryPromise({
++      try: () =>
++        fetch(
++          `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${FORKHUB_T3CODE_UPSTREAM_MANIFEST_PATH}`,
++          { headers: { Accept: "application/vnd.github+json" } },
++        ),
++      catch: (cause) => new Error(`Could not reach ${owner}/${repo} catalog manifest.`, { cause }),
++    });
++    if (!response.ok) {
++      return yield* Effect.fail(new Error(`No catalog manifest (HTTP ${response.status}).`));
++    }
++    const body = (yield* Effect.tryPromise({
++      try: () => response.json() as Promise<{ content?: unknown; encoding?: unknown }>,
++      catch: (cause) => new Error(`Could not parse catalog manifest.`, { cause }),
++    })) as { content?: unknown; encoding?: unknown };
++    if (body.encoding !== "base64" || typeof body.content !== "string") {
++      return yield* Effect.fail(new Error(`Unexpected catalog manifest encoding.`));
++    }
++    const document = JSON.parse(
++      Buffer.from(body.content, "base64").toString("utf8"),
++    ) as unknown;
++    const trains = resolveTrainsFromUpstreamManifest(document);
++    if (!trains) {
++      return yield* Effect.fail(new Error(`Catalog manifest declares no trains.`));
++    }
++    return trains;
++  });
++}
++
  function shouldBroadcastDownloadProgress(
    currentState: DesktopUpdateState,
    nextPercent: number,
-@@ -294,6 +352,10 @@ export const make = Effect.gen(function* () {
+@@ -294,6 +395,10 @@ export const make = Effect.gen(function* () {
        environment.appVersion,
        environment.runtimeInfo,
        environment.defaultDesktopSettings.updateChannel,
@@ -1488,7 +1577,7 @@ index 245925a6..ac38ae48 100644
      ),
    );
  
-@@ -351,17 +413,17 @@ export const make = Effect.gen(function* () {
+@@ -351,17 +456,17 @@ export const make = Effect.gen(function* () {
  
    const resolveDisabledReason = Effect.gen(function* () {
      const hasFeedConfig = yield* hasUpdateFeedConfig;
@@ -1517,7 +1606,7 @@ index 245925a6..ac38ae48 100644
    });
  
    const activeUpdateAction = Ref.get(activeUpdateActionRef);
-@@ -389,8 +451,38 @@ export const make = Effect.gen(function* () {
+@@ -389,8 +494,38 @@ export const make = Effect.gen(function* () {
  
    const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
      channel: DesktopUpdateChannel,
@@ -1556,7 +1645,7 @@ index 245925a6..ac38ae48 100644
      const allowsPrerelease = channel === "nightly";
      yield* electronUpdater.setChannel(channel);
      yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
-@@ -406,6 +498,52 @@ export const make = Effect.gen(function* () {
+@@ -406,6 +541,52 @@ export const make = Effect.gen(function* () {
  
    const shouldEnableAutoUpdates = resolveDisabledReason.pipe(Effect.map(Option.isNone));
  
@@ -1609,7 +1698,7 @@ index 245925a6..ac38ae48 100644
    const checkForUpdates = Effect.fn("desktop.updates.checkForUpdates")(function* (
      reason: string,
      actionReservation: "acquire" | "held" = "acquire",
-@@ -741,7 +879,13 @@ export const make = Effect.gen(function* () {
+@@ -741,7 +922,13 @@ export const make = Effect.gen(function* () {
        Effect.flatMap(
          Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
            const state = yield* Ref.get(updateStateRef);
@@ -1624,7 +1713,7 @@ index 245925a6..ac38ae48 100644
              yield* logUpdaterInfo("ignoring update that does not match selected channel", {
                version: info.version,
                channel: state.channel,
-@@ -757,6 +901,7 @@ export const make = Effect.gen(function* () {
+@@ -757,6 +944,7 @@ export const make = Effect.gen(function* () {
              info.releaseNotes,
              info.version,
              state.channel,
@@ -1632,7 +1721,7 @@ index 245925a6..ac38ae48 100644
            );
            yield* setState(
              reduceDesktopUpdateStateOnUpdateAvailable(
-@@ -924,7 +1069,16 @@ export const make = Effect.gen(function* () {
+@@ -924,7 +1112,16 @@ export const make = Effect.gen(function* () {
  
        const settings = yield* desktopSettings.get;
        const enabled = yield* shouldEnableAutoUpdates;
@@ -1650,7 +1739,7 @@ index 245925a6..ac38ae48 100644
        if (!enabled) {
          return;
        }
-@@ -932,7 +1086,10 @@ export const make = Effect.gen(function* () {
+@@ -932,7 +1129,10 @@ export const make = Effect.gen(function* () {
  
        yield* electronUpdater.setAutoDownload(false);
        yield* electronUpdater.setAutoInstallOnAppQuit(false);
@@ -1662,7 +1751,7 @@ index 245925a6..ac38ae48 100644
        yield* electronUpdater.setDisableDifferentialDownload(
          isArm64HostRunningIntelBuild(environment.runtimeInfo),
        );
-@@ -994,14 +1151,25 @@ export const make = Effect.gen(function* () {
+@@ -994,14 +1194,25 @@ export const make = Effect.gen(function* () {
              ),
            );
  
@@ -1690,7 +1779,7 @@ index 245925a6..ac38ae48 100644
          const allowDowngrade = yield* electronUpdater.allowDowngrade;
          yield* electronUpdater.setAllowDowngrade(true);
          yield* checkForUpdates("channel-change", "held").pipe(
-@@ -1010,6 +1178,89 @@ export const make = Effect.gen(function* () {
+@@ -1010,6 +1221,89 @@ export const make = Effect.gen(function* () {
          return yield* Ref.get(updateStateRef);
        }).pipe(Effect.ensuring(finishUpdateAction("channel")));
      }),
@@ -1959,10 +2048,10 @@ index 7fd50a82..380f1bff 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
-index acf4155f..12feca3e 100644
+index acf4155f..c155dd22 100644
 --- a/apps/desktop/src/updates/updateChannels.test.ts
 +++ b/apps/desktop/src/updates/updateChannels.test.ts
-@@ -1,6 +1,16 @@
+@@ -1,6 +1,17 @@
  import { describe, expect, it } from "vite-plus/test";
  
 -import { isNightlyDesktopVersion, resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
@@ -1972,6 +2061,7 @@ index acf4155f..12feca3e 100644
 +  isVersionAllowedOnUpdateChannel,
 +  normalizeForkHubOwner,
 +  resolveCatalogTrains,
++  resolveTrainsFromUpstreamManifest,
 +  resolveDefaultDesktopUpdateChannel,
 +  resolveForkHubFeedConfig,
 +  resolveMigratedUpdateTrack,
@@ -1980,7 +2070,7 @@ index acf4155f..12feca3e 100644
  
  describe("updateChannels", () => {
    it("keeps preview builds branded as nightly but on the latest update channel", () => {
-@@ -12,5 +22,125 @@ describe("updateChannels", () => {
+@@ -12,5 +23,166 @@ describe("updateChannels", () => {
    it("only matches the first prerelease identifier", () => {
      expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
      expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
@@ -2053,8 +2143,7 @@ index acf4155f..12feca3e 100644
 +    expect(resolveDefaultDesktopUpdateChannel("0.0.42-fh.with-fh.1")).toBe("latest");
 +  });
 +
-+  it("detects catalog trains from versioned updater tags only", () => {
-+    expect(
++  it("detects catalog trains from versioned updater tags only", () => {    expect(
 +      resolveCatalogTrains([
 +        { tag_name: "pingdotgg-t3code--v0.0.43-nightly.20260928.2375-fh1", draft: false },
 +        { tag_name: "v0.0.43-nightly.20260928.2375.fh.with-fh.1", draft: false },
@@ -2104,13 +2193,55 @@ index acf4155f..12feca3e 100644
 +    expect(
 +      resolveMigratedUpdateTrack("nightly", { hasStableTrain: false, hasNightlyTrain: true }),
 +    ).toBe("nightly");
++  });
++});
++
++describe("resolveTrainsFromUpstreamManifest", () => {
++  it("reads the declared trains", () => {
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["nightly"] })).toEqual({
++      hasStableTrain: false,
++      hasNightlyTrain: true,
++    });
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["stable", "nightly"] })).toEqual({
++      hasStableTrain: true,
++      hasNightlyTrain: true,
++    });
++  });
++
++  it("returns null without a usable trains list", () => {
++    expect(resolveTrainsFromUpstreamManifest({})).toBeNull();
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["canary"] })).toBeNull();
++    expect(resolveTrainsFromUpstreamManifest(null)).toBeNull();
++  });
++});
++
++describe("resolveTrainsFromUpstreamManifest", () => {
++  it("reads the declared trains", () => {
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["nightly"] })).toEqual({
++      hasStableTrain: false,
++      hasNightlyTrain: true,
++    });
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["stable", "nightly"] })).toEqual({
++      hasStableTrain: true,
++      hasNightlyTrain: true,
++    });
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["Stable"] })).toEqual({
++      hasStableTrain: true,
++      hasNightlyTrain: false,
++    });
++  });
++
++  it("returns null without a usable trains list", () => {
++    expect(resolveTrainsFromUpstreamManifest({})).toBeNull();
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["canary"] })).toBeNull();
++    expect(resolveTrainsFromUpstreamManifest(null)).toBeNull();
    });
  });
 diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
-index e7f9a2f8..050ff8a8 100644
+index e7f9a2f8..84cc0c4e 100644
 --- a/apps/desktop/src/updates/updateChannels.ts
 +++ b/apps/desktop/src/updates/updateChannels.ts
-@@ -1,18 +1,144 @@
+@@ -1,18 +1,171 @@
 -import type { DesktopUpdateChannel } from "@t3tools/contracts";
 +import type { DesktopForkHubRepo, DesktopUpdateChannel } from "@t3tools/contracts";
 +import { DEFAULT_FORKHUB_PUBLISHER } from "@t3tools/contracts";
@@ -2183,6 +2314,33 @@ index e7f9a2f8..050ff8a8 100644
 +export interface ForkHubCatalogTrains {
 +  readonly hasStableTrain: boolean;
 +  readonly hasNightlyTrain: boolean;
++}
++
++// Authoritative trains for THIS app's target, read from the publisher's
++// catalog manifest. Catalogs key targets by upstream coordinates, so the
++// t3code entry lives at this path in every publisher's `.forkhub` repo
++// (foreign publishers without it fall back to the tag scan below).
++export const FORKHUB_T3CODE_UPSTREAM_MANIFEST_PATH =
++  "repos/github.com/pingdotgg/t3code/upstream.json";
++
++const FORKHUB_STABLE_TRAIN_NAMES = new Set(["stable", "latest", "default"]);
++
++// `trains` mirrors the build workflow's train names (`nightly`, `stable`).
++// Returns null when the document carries no usable trains list.
++export function resolveTrainsFromUpstreamManifest(document: unknown): ForkHubCatalogTrains | null {
++  if (typeof document !== "object" || document === null) return null;
++  const trains = (document as { trains?: unknown }).trains;
++  if (!Array.isArray(trains)) return null;
++  const names = new Set(
++    trains.filter((train): train is string => typeof train === "string").map((train) => train.toLowerCase()),
++  );
++  if (!names.has("nightly") && ![...FORKHUB_STABLE_TRAIN_NAMES].some((name) => names.has(name))) {
++    return null;
++  }
++  return {
++    hasStableTrain: [...FORKHUB_STABLE_TRAIN_NAMES].some((name) => names.has(name)),
++    hasNightlyTrain: names.has("nightly"),
++  };
 +}
 +
 +interface CatalogReleaseRow {
@@ -2655,13 +2813,13 @@ index 0c4991c1..79c11839 100644
      ),
 diff --git a/apps/web/src/components/forkHub.logic.test.ts b/apps/web/src/components/forkHub.logic.test.ts
 new file mode 100644
-index 00000000..cd224f4f
+index 00000000..8e6b3b9d
 --- /dev/null
 +++ b/apps/web/src/components/forkHub.logic.test.ts
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,154 @@
 +import { describe, expect, it, vi } from "vite-plus/test";
 +
-+import { checkForkHubOwner, normalizeForkHubOwner } from "./forkHub.logic";
++import { checkForkHubOwner, normalizeForkHubOwner, resolveTrainsFromUpstreamManifest } from "./forkHub.logic";
 +
 +function jsonResponse(status: number, body: unknown): Response {
 +  return {
@@ -2669,6 +2827,13 @@ index 00000000..cd224f4f
 +    ok: status >= 200 && status < 300,
 +    json: async () => body,
 +  } as Response;
++}
++
++function manifestResponse(trains: unknown): Response {
++  return jsonResponse(200, {
++    encoding: "base64",
++    content: Buffer.from(JSON.stringify({ trains })).toString("base64"),
++  });
 +}
 +
 +describe("normalizeForkHubOwner", () => {
@@ -2697,7 +2862,8 @@ index 00000000..cd224f4f
 +      hasStableTrain: true,
 +      hasNightlyTrain: false,
 +    });
-+    expect(fetchImpl).toHaveBeenCalledOnce();
++    // Releases call plus manifest call (manifest misses here, tag scan decides).
++    expect(fetchImpl).toHaveBeenCalledTimes(2);
 +  });
 +
 +  it("labels latest with a version tag, not a newer bundle tag", async () => {
@@ -2756,12 +2922,61 @@ index 00000000..cd224f4f
 +    expect(fetchImpl).not.toHaveBeenCalled();
 +  });
 +});
++
++describe("resolveTrainsFromUpstreamManifest", () => {
++  it("reads the declared trains", () => {
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["nightly"] })).toEqual({
++      hasStableTrain: false,
++      hasNightlyTrain: true,
++    });
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["stable", "nightly"] })).toEqual({
++      hasStableTrain: true,
++      hasNightlyTrain: true,
++    });
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["Stable"] })).toEqual({
++      hasStableTrain: true,
++      hasNightlyTrain: false,
++    });
++  });
++
++  it("returns null without a usable trains list", () => {
++    expect(resolveTrainsFromUpstreamManifest({})).toBeNull();
++    expect(resolveTrainsFromUpstreamManifest({ trains: ["canary"] })).toBeNull();
++    expect(resolveTrainsFromUpstreamManifest(null)).toBeNull();
++  });
++});
++
++describe("checkForkHubOwner trains", () => {
++  it("prefers the catalog manifest over the tag scan", async () => {
++    const fetchImpl = vi.fn(async (url: string) =>
++      String(url).includes("/contents/")
++        ? manifestResponse(["nightly"])
++        : jsonResponse(200, [
++            { tag_name: "v2.8.1-fh.with-fh.1" },
++            { tag_name: "v0.0.43-nightly.20260928.2375.fh.with-fh.1" },
++          ]),
++    );
++    const result = await checkForkHubOwner("with-fh", fetchImpl as unknown as typeof fetch);
++    expect(result).toMatchObject({ hasStableTrain: false, hasNightlyTrain: true });
++    expect(fetchImpl).toHaveBeenCalledTimes(2);
++  });
++
++  it("falls back to the tag scan without a manifest entry", async () => {
++    const fetchImpl = vi.fn(async (url: string) =>
++      String(url).includes("/contents/")
++        ? jsonResponse(404, { message: "Not Found" })
++        : jsonResponse(200, [{ tag_name: "v1.0.0" }]),
++    );
++    const result = await checkForkHubOwner("with-fh", fetchImpl as unknown as typeof fetch);
++    expect(result).toMatchObject({ hasStableTrain: true, hasNightlyTrain: false });
++  });
++});
 diff --git a/apps/web/src/components/forkHub.logic.ts b/apps/web/src/components/forkHub.logic.ts
 new file mode 100644
-index 00000000..f1bb3e17
+index 00000000..6dba166c
 --- /dev/null
 +++ b/apps/web/src/components/forkHub.logic.ts
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,196 @@
 +import type { DesktopForkHubRepo } from "@t3tools/contracts";
 +
 +/**
@@ -2783,6 +2998,59 @@ index 00000000..f1bb3e17
 +
 +export function forkHubReleasesApiUrl(owner: string, repo: DesktopForkHubRepo): string {
 +  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=20`;
++}
++
++// This app's entry in a publisher catalog, keyed by upstream coordinates.
++// The manifest declares per-target trains (`trains: ["nightly"]`) —
++// authoritative, so other targets' releases can never leak a phantom train
++// into this app's track list. Publishers without it fall back to the tag
++// scan below.
++export const FORKHUB_T3CODE_UPSTREAM_MANIFEST_PATH =
++  "repos/github.com/pingdotgg/t3code/upstream.json";
++
++const FORKHUB_STABLE_TRAIN_NAMES = ["stable", "latest", "default"];
++
++export interface ForkHubCatalogTrains {
++  readonly hasStableTrain: boolean;
++  readonly hasNightlyTrain: boolean;
++}
++
++export function resolveTrainsFromUpstreamManifest(document: unknown): ForkHubCatalogTrains | null {
++  if (typeof document !== "object" || document === null) return null;
++  const trains = (document as { trains?: unknown }).trains;
++  if (!Array.isArray(trains)) return null;
++  const names = new Set(
++    trains
++      .filter((train): train is string => typeof train === "string")
++      .map((train) => train.toLowerCase()),
++  );
++  if (!names.has("nightly") && !FORKHUB_STABLE_TRAIN_NAMES.some((name) => names.has(name))) {
++    return null;
++  }
++  return {
++    hasStableTrain: FORKHUB_STABLE_TRAIN_NAMES.some((name) => names.has(name)),
++    hasNightlyTrain: names.has("nightly"),
++  };
++}
++
++export function forkHubUpstreamManifestApiUrl(owner: string, repo: DesktopForkHubRepo): string {
++  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${FORKHUB_T3CODE_UPSTREAM_MANIFEST_PATH}`;
++}
++
++export function resolveCatalogTrains(rows: unknown): ForkHubCatalogTrains {
++  const releases = Array.isArray(rows) ? rows.filter(isUsableRelease) : [];
++  const versionTags = releases
++    .map((row) => (row as GitHubReleaseRow).tag_name as string)
++    .filter((tag) => /^v\d+\.\d+\.\d+/.test(tag));
++  return {
++    hasStableTrain: versionTags.some(
++      (tag) =>
++        !/-nightly\.\d{8}\./.test(tag) &&
++        !/-preview\.\d{8}\./.test(tag) &&
++        !/-pr\./.test(tag),
++    ),
++    hasNightlyTrain: versionTags.some((tag) => /-nightly\.\d{8}\./.test(tag)),
++  };
 +}
 +
 +export function forkHubRepoWebUrl(owner: string, repo: DesktopForkHubRepo): string {
@@ -2810,6 +3078,34 @@ index 00000000..f1bb3e17
 +  if (typeof row !== "object" || row === null) return false;
 +  const candidate = row as GitHubReleaseRow;
 +  return candidate.draft !== true && typeof candidate.tag_name === "string";
++}
++
++async function readTrainsFromUpstreamManifest(
++  owner: string,
++  repo: DesktopForkHubRepo,
++  fetchImpl: typeof fetch,
++): Promise<ForkHubCatalogTrains | null> {
++  try {
++    const response = await fetchImpl(forkHubUpstreamManifestApiUrl(owner, repo), {
++      headers: { Accept: "application/vnd.github+json" },
++    });
++    if (!response.ok) return null;
++    const body = (await response.json()) as unknown;
++    if (
++      typeof body !== "object" ||
++      body === null ||
++      (body as { encoding?: unknown }).encoding !== "base64" ||
++      typeof (body as { content?: unknown }).content !== "string"
++    ) {
++      return null;
++    }
++    const document = JSON.parse(
++      atob(((body as { content: string }).content).replace(/\s/g, "")),
++    ) as unknown;
++    return resolveTrainsFromUpstreamManifest(document);
++  } catch {
++    return null;
++  }
 +}
 +
 +/**
@@ -2851,16 +3147,12 @@ index 00000000..f1bb3e17
 +      `${owner}/${repo} exists but has no published releases yet. Ask them to publish a ForkHub build first.`,
 +    );
 +  }
-+  // Train detection runs on versioned updater tags only (`vX.Y.Z…`):
-+  // bundle releases mirror the same trains and carry no version of their
-+  // own. Preview/PR cuts serve no train.
-+  const versionTags = releases
-+    .map((row) => (row as GitHubReleaseRow).tag_name as string)
-+    .filter((tag) => /^v\d+\.\d+\.\d+/.test(tag));
-+  const hasNightlyTrain = versionTags.some((tag) => /-nightly\.\d{8}\./.test(tag));
-+  const hasStableTrain = versionTags.some(
-+    (tag) => !/-nightly\.\d{8}\./.test(tag) && !/-preview\.\d{8}\./.test(tag) && !/-pr\./.test(tag),
-+  );
++  // Authoritative trains first: the catalog manifest declares per-target
++  // trains. Falls back to the tag scan when the publisher has no manifest
++  // entry for this app.
++  const manifestTrains = await readTrainsFromUpstreamManifest(owner, repo, fetchImpl);
++  const { hasStableTrain, hasNightlyTrain } =
++    manifestTrains ?? resolveCatalogTrains(releases);
 +  if (!hasStableTrain && !hasNightlyTrain) {
 +    throw new Error(
 +      `${owner}/${repo} has releases but serves neither the stable nor the nightly train. Ask them to publish a ForkHub build first.`,

@@ -31,7 +31,7 @@ if [ -z "$(ls "$DIST"/latest-*.yml "$DIST"/nightly-*.yml 2>/dev/null)" ]; then
 fi
 
 FILES=""
-for f in "$DIST"/*.AppImage "$DIST"/latest-*.yml "$DIST"/nightly-*.yml "$DIST"/*.blockmap "$DIST"/t3-*.tar.gz "$DIST"/t3-*.zip "$DIST"/imbios-fh-t3-*.tgz; do
+for f in "$DIST"/*.AppImage "$DIST"/latest-*.yml "$DIST"/nightly-*.yml "$DIST"/*.blockmap "$DIST"/with-fh-fh-t3-*.tgz; do
   [ -e "$f" ] || continue
   FILES="$FILES $f"
 done

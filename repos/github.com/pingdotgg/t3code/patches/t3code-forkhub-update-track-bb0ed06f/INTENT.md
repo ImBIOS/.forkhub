@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 12
+version: 13
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -13,7 +13,7 @@ owners: [Imamuzzaki Abu Salam]
 source_url: null
 imported_at: null
 created: 2026-09-24
-last_realized_against_commit: 78af372
+last_realized_against_commit: d15210cd
 verifies_with: node_modules/.bin/vp test run (focused suites, see verify.sh)
 ---
 
@@ -151,3 +151,14 @@ patched install is never mistaken for stock.
    on implicit homes (best-effort catalog read; explicit T3CODE_HOME is
    never touched), and the track migrates when the publisher drops it.
    Unknown trains (never checked) leave both tracks.
+
+10. **Trains are authoritative from the catalog manifest.** Tag scans cannot
+    tell which target a versioned tag belongs to, so another target's stable
+    release in the same catalog repo leaked a phantom Stable track into this
+    app's selector. Trains now resolve from this target's `upstream.json`
+    manifest in the publisher's catalog first
+    (`FORKHUB_T3CODE_UPSTREAM_MANIFEST_PATH`), falling back to the release
+    tag scan only for publishers without a manifest entry. Realized against
+    upstream `v0.0.43-nightly.20260928.2375` (d15210cd), which also brings
+    upstream's Linux .deb support and update-restart tunnel markers under
+    the patch.

@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 10
+version: 11
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -144,3 +144,9 @@ patched install is never mistaken for stock.
    nightly desktop icons. Provenance and cross-install rules: `.fh`
    versions install on ForkHub builds only, on either track; stock builds
    never flow into ForkHub installs and vice versa.
+
+9. **Tracks follow publisher trains.** The Update track selector only
+   offers trains the publisher's catalog serves (with-fh: nightly only).
+   Trains persist per publisher, refresh on every Check and once at boot
+   (best-effort catalog read), and the track migrates when the publisher
+   drops it. Unknown trains (never checked) leave both tracks.

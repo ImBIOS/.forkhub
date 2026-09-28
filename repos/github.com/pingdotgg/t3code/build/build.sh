@@ -127,6 +127,26 @@ export T3CODE_FORKHUB_BUILD=1
 export T3CODE_DESKTOP_UPDATE_REPOSITORY="$REPO"
 say "product=T3 Code x ForkHub update_repo=$REPO"
 
+# Public T3 Connect identifiers (same production deployment upstream ships;
+# publishable key + relay URL are public by design, safe to bake). Without
+# these the built desktop and CLI report T3 Connect as unavailable. Env wins
+# when preset, so a publisher can point a catalog at staging instead.
+for _t3c_key in T3CODE_RELAY_URL T3CODE_CLERK_PUBLISHABLE_KEY T3CODE_CLERK_JWT_TEMPLATE T3CODE_CLERK_CLI_OAUTH_CLIENT_ID; do
+  eval "_t3c_current=\${$_t3c_key:-}"
+  if [ -z "$_t3c_current" ]; then
+    _t3c_value=$(sed -n "s/^${_t3c_key}=//p" .env.example 2>/dev/null | head -n 1 | tr -d '\r')
+    if [ -n "$_t3c_value" ]; then
+      export "$_t3c_key=$_t3c_value"
+    fi
+  fi
+done
+unset _t3c_key _t3c_value _t3c_current
+if [ -z "${T3CODE_RELAY_URL:-}" ] || [ -z "${T3CODE_CLERK_PUBLISHABLE_KEY:-}" ] || [ -z "${T3CODE_CLERK_CLI_OAUTH_CLIENT_ID:-}" ]; then
+  echo "FORKHUB BUILD MISCONFIGURED: T3 Connect public identifiers missing; every ForkHub build must ship working T3 Connect." >&2
+  exit 1
+fi
+say "t3-connect public config baked"
+
 mkdir -p "$DIST/forkhub"
 if node scripts/build-desktop-artifact.ts --platform linux --target AppImage --arch x64 --build-version "$FH_VERSION" --output-dir "$DIST/forkhub" --verbose >>"$LOG" 2>&1; then
   say "artifact build ok"

@@ -387,7 +387,7 @@ index 0000000..893bb87
 +  assert.equal(second, first, 'must be stable across calls in one process');
 +});
 diff --git a/electron/update/ReleaseNotesManager.test.mjs b/electron/update/ReleaseNotesManager.test.mjs
-index c4d358d..6964a68 100644
+index c4d358d..daa9c4a 100644
 --- a/electron/update/ReleaseNotesManager.test.mjs
 +++ b/electron/update/ReleaseNotesManager.test.mjs
 @@ -34,8 +34,8 @@ test('release notes parser accepts GitHub H3 headings and emoji-decorated titles
@@ -399,7 +399,7 @@ index c4d358d..6964a68 100644
    const manager = ReleaseNotesManager.getInstance();
 -  assert.equal(manager.repoOwner, 'Natively-AI-assistant');
 -  assert.equal(manager.repoName, 'natively-cluely-ai-assistant');
-+  assert.equal(manager.repoOwner, process.env.NATIVELY_UPDATE_OWNER || 'ImBIOS');
++  assert.equal(manager.repoOwner, process.env.NATIVELY_UPDATE_OWNER || 'with-fh');
 +  assert.equal(manager.repoName, process.env.NATIVELY_UPDATE_REPO || '.forkhub');
  });
 diff --git a/electron/update/ReleaseNotesManager.ts b/electron/update/ReleaseNotesManager.ts
@@ -561,10 +561,10 @@ index 25f5635..fff4090 100644
      private parseReleaseNotes(body: string, version: string, url: string): ParsedReleaseNotes {
 diff --git a/electron/update/updateFeed.test.mjs b/electron/update/updateFeed.test.mjs
 new file mode 100644
-index 0000000..cf1bea6
+index 0000000..6086dbf
 --- /dev/null
 +++ b/electron/update/updateFeed.test.mjs
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,46 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
 +import path from 'node:path';
@@ -577,7 +577,7 @@ index 0000000..cf1bea6
 +
 +test('update feed defaults to the ForkHub catalog (env-overridable)', () => {
 +  const feed = getUpdateFeed();
-+  assert.equal(feed.owner, process.env.NATIVELY_UPDATE_OWNER || 'ImBIOS');
++  assert.equal(feed.owner, process.env.NATIVELY_UPDATE_OWNER || 'with-fh');
 +  assert.equal(feed.repo, process.env.NATIVELY_UPDATE_REPO || '.forkhub');
 +  assert.match(
 +    latestReleasePageUrl(feed),
@@ -602,6 +602,7 @@ index 0000000..cf1bea6
 +
 +test('isForkCounterUpgrade orders same-owner rebuilds only', () => {
 +  assert.equal(isForkCounterUpgrade('2.8.1-fh.imbios.1', '2.8.1-fh.imbios.2'), true);
++  assert.equal(isForkCounterUpgrade('2.8.1-fh.with-fh.1', '2.8.1-fh.with-fh.2'), true);
 +  assert.equal(isForkCounterUpgrade('2.8.1-fh.imbios.2', '2.8.1-fh.imbios.2'), false);
 +  assert.equal(isForkCounterUpgrade('2.8.1-fh.imbios.2', '2.8.1-fh.imbios.1'), false);
 +  // stock↔fork and cross-owner pairs never upgrade
@@ -612,25 +613,26 @@ index 0000000..cf1bea6
 +});
 diff --git a/electron/update/updateFeed.ts b/electron/update/updateFeed.ts
 new file mode 100644
-index 0000000..c3bbdef
+index 0000000..bf05258
 --- /dev/null
 +++ b/electron/update/updateFeed.ts
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,128 @@
 +/**
 + * electron/update/updateFeed.ts
 + *
 + * Single source of truth for where Natively checks for, downloads, and
 + * documents updates from.
 + *
-+ * Fork builds (ImBIOS) do NOT poll the upstream author's releases — they
++ * Fork builds (ForkHub) do NOT poll the upstream author's releases — they
 + * follow the ForkHub catalog (GitHub Releases of the `.forkhub` intent
-+ * repository), so a patched install is never offered (or silently handed)
-+ * a stock build, and stock installs never see fork builds.
++ * repository, currently `with-fh/.forkhub`), so a patched install is never
++ * offered (or silently handed) a stock build, and stock installs never see
++ * fork builds.
 + *
 + * Overrides (build-time or runtime env — runtime env only applies when the
 + * process is launched with it, e.g. dev; packaged GUI launches typically
 + * carry no env, so the baked defaults below are authoritative for ships):
-+ *   NATIVELY_UPDATE_OWNER  (default "ImBIOS")
++ *   NATIVELY_UPDATE_OWNER  (default "with-fh")
 + *   NATIVELY_UPDATE_REPO   (default ".forkhub")
 + *
 + * Catalog conventions (must hold for in-app updates to resolve):
@@ -655,7 +657,7 @@ index 0000000..c3bbdef
 +const envRepo =
 +  typeof process !== "undefined" ? process.env?.NATIVELY_UPDATE_REPO : undefined;
 +
-+export const UPDATE_FEED_OWNER = envOwner || "ImBIOS";
++export const UPDATE_FEED_OWNER = envOwner || "with-fh";
 +export const UPDATE_FEED_REPO = envRepo || ".forkhub";
 +
 +/** Tag namespace for Natively installer releases inside the shared catalog. */
@@ -733,7 +735,8 @@ index 0000000..c3bbdef
 + */
 +export function isForkCounterUpgrade(current: string, remote: string): boolean {
 +  const parse = (v: string): { owner: string; n: number } | null => {
-+    const m = /-fh\.([a-z0-9]+)\.(\d+)$/i.exec(v.trim());
++    // Owner class includes `-` for hyphenated publishers (e.g. `with-fh`).
++    const m = /-fh\.([a-z0-9-]+)\.(\d+)$/i.exec(v.trim());
 +    if (!m) return null;
 +    const n = parseInt(m[2], 10);
 +    return Number.isFinite(n) ? { owner: m[1].toLowerCase(), n } : null;
@@ -743,7 +746,7 @@ index 0000000..c3bbdef
 +  return !!c && !!r && c.owner === r.owner && r.n > c.n;
 +}
 diff --git a/package.json b/package.json
-index a4cf4b8..0bddeda 100644
+index a4cf4b8..4e40ee8 100644
 --- a/package.json
 +++ b/package.json
 @@ -212,8 +212,8 @@
@@ -752,7 +755,7 @@ index a4cf4b8..0bddeda 100644
          "provider": "github",
 -        "owner": "Natively-AI-assistant",
 -        "repo": "natively-cluely-ai-assistant",
-+        "owner": "ImBIOS",
++        "owner": "with-fh",
 +        "repo": ".forkhub",
          "releaseType": "release"
        }

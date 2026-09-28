@@ -3,7 +3,7 @@
 ## Must pass for promotion to APPLIED
 
 1. **Feed is the catalog.** `getUpdateFeed()` returns
-   `{owner:'ImBIOS', repo:'.forkhub'}` by default and honors
+   `{owner:'with-fh', repo:'.forkhub'}` by default and honors
    `NATIVELY_UPDATE_OWNER` / `NATIVELY_UPDATE_REPO`; `package.json`
    `build.publish` points at the same repo; `setupAutoUpdater()` calls
    `setFeedURL` with it, keeps `channel='latest'`, and sets
@@ -42,6 +42,6 @@
 sh repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/patches/natively-forkhub-update-track-53ac9810/verify.sh
 ```
 
-(run from the `ImBIOS/.forkhub` checkout; `TARGET_CHECKOUT` env can point
+(run from the `with-fh/.forkhub` checkout; `TARGET_CHECKOUT` env can point
 at the Natively fork checkout, default `../../natively-cluely-ai-assistant`
 — i.e. a sibling of the `.forkhub` checkout — or an absolute path)

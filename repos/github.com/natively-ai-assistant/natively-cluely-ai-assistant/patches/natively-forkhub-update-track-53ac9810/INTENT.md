@@ -1,6 +1,6 @@
 ---
 id: natively-forkhub-update-track-53ac9810
-title: Natively ForkHub update track (ImBIOS catalog feed) + stable hardware ID without premium submodule
+title: Natively ForkHub update track (ForkHub catalog feed) + stable hardware ID without premium submodule
 target_repo: github.com/natively-ai-assistant/natively-cluely-ai-assistant
 target_area: [electron/update/updateFeed.ts, electron/update/ReleaseNotesManager.ts, electron/main.ts, electron/ipcHandlers.ts, electron/preload.ts, electron/services/HardwareId.ts, src/components/UpdateBanner.tsx, src/components/onboarding/OrchestratedToasterHost.tsx, src/types/electron.d.ts, package.json]
 status: draft
@@ -19,10 +19,10 @@ verifies_with: node --test (focused suites, see verify.sh)
 
 ## Intent
 
-Make the ImBIOS fork of Natively buildable and self-updating through
+Make the ForkHub build of Natively buildable and self-updating through
 forkhub: the app's electron-updater feed, release-notes lookup, and
 manual-download links all follow the ForkHub catalog (GitHub Releases of
-`ImBIOS/.forkhub`) instead of the upstream author's repo, and the free-trial
+`with-fh/.forkhub`) instead of the upstream author's repo, and the free-trial
 device binding works in open-source / fork builds that ship WITHOUT the
 private `premium/` submodule.
 
@@ -48,7 +48,7 @@ placeholder.
 1. **Single source of truth for the feed.** Owner/repo live in exactly one
    module (`electron/update/updateFeed.ts`), env-overridable via
    `NATIVELY_UPDATE_OWNER` / `NATIVELY_UPDATE_REPO`, defaulting to
-   `ImBIOS/.forkhub`. The updater (`setFeedURL`), the builder
+   `with-fh/.forkhub`. The updater (`setFeedURL`), the builder
    (`package.json` `publish`), release notes, and renderer links all read
    from it — no second hardcoded copy.
 2. **No stock/fork cross-talk.** Fork builds never poll upstream releases
@@ -111,7 +111,7 @@ placeholder.
 - `src/components/UpdateBanner.tsx`: feed-driven fallback links.
 - `src/components/onboarding/OrchestratedToasterHost.tsx`: `invalid_hwid`
   → friendly copy in trial promo.
-- `package.json` `build.publish`: `ImBIOS/.forkhub`.
+- `package.json` `build.publish`: `with-fh/.forkhub`.
 - Linux CI lives beside the patch (`../build/build.sh`, `publish.sh`,
   `BUILD.md`, `CONSUME.md`, `triggers.md`, `../upstream.json`): AppImage +
   deb + `latest-linux.yml` to the catalog; updater-channel release

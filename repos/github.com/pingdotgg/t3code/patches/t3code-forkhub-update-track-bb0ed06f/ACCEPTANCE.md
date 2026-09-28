@@ -42,3 +42,8 @@ sh repos/github.com/pingdotgg/t3code/patches/t3code-forkhub-update-track-bb0ed06
    leaves a `.corrupt.bak` sidecar, while stock leaves no sidecar
    (`DesktopEnvironment.test.ts`, `DesktopEarlyElectronStartup.test.ts`,
    `DesktopAppSettings.test.ts`).
+
+9. **First-boot import**: a packaged ForkHub version with a fresh implicit
+   home copies the three state files from the stock home and leaves a
+   marker; reruns, existing settings, deliberate resets, stock builds, and
+   explicit `T3CODE_HOME` all skip (`DesktopForkHubStockImport.test.ts`).

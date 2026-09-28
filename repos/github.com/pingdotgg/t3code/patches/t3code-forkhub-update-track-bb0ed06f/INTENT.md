@@ -2,10 +2,10 @@
 id: t3code-forkhub-update-track-bb0ed06f
 title: T3 Code "ForkHub" update track with per-owner channel, x ForkHub brand, update-all nudge, and side-by-side isolation
 target_repo: github.com/pingdotgg/t3code
-target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts]
+target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 8
+version: 9
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -125,3 +125,11 @@ patched install is never mistaken for stock.
    `desktop-settings.json` the ForkHub build cannot decode is quarantined
    to a `.corrupt.bak` sidecar with a warning and startup continues on
    defaults; stock keeps its historical silent-defaults behavior.
+
+7. **First boot adopts stock state.** A fresh ForkHub home (implicit home
+   only, never under an explicit `T3CODE_HOME`) copies `desktop-settings`,
+   `client-settings`, and `saved-environments` from the stock home before
+   the first settings load, so track, owner, prefs, and environments
+   survive the switch. Backend identity, credentials, and server settings
+   stay fresh per install. A marker file makes it run once; deleting the
+   ForkHub home re-arms it.

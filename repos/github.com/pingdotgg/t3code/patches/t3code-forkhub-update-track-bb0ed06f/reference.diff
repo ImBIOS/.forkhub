@@ -3802,3 +3802,930 @@ index be5434781b..5a81f796c8 100644
    if (resolveDesktopUpdateChannel(version) === "nightly") {
      return {
        macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
+diff --git a/apps/desktop/src/ipc/methods/updates.ts b/apps/desktop/src/ipc/methods/updates.ts
+index c92bbdac14..2fb4905b4b 100644
+--- a/apps/desktop/src/ipc/methods/updates.ts
++++ b/apps/desktop/src/ipc/methods/updates.ts
+@@ -37,6 +37,8 @@ export const setForkHubOwner = DesktopIpc.makeIpcMethod({
+   payload: Schema.Struct({
+     owner: Schema.String,
+     repo: Schema.optional(DesktopForkHubRepoSchema),
++    hasStableTrain: Schema.optional(Schema.Boolean),
++    hasNightlyTrain: Schema.optional(Schema.Boolean),
+   }),
+   result: DesktopUpdateStateSchema,
+   handler: Effect.fn("desktop.ipc.updates.setForkHubOwner")(function* (input) {
+diff --git a/apps/desktop/src/settings/DesktopAppSettings.test.ts b/apps/desktop/src/settings/DesktopAppSettings.test.ts
+index e33d80a7c0..a0a1865466 100644
+--- a/apps/desktop/src/settings/DesktopAppSettings.test.ts
++++ b/apps/desktop/src/settings/DesktopAppSettings.test.ts
+@@ -134,6 +134,9 @@ describe("DesktopSettings", () => {
+         updateChannelConfiguredByUser: false,
+         forkhubOwner: "",
+         forkhubRepo: ".forkhub",
++        forkhubHasStableTrain: null,
++        forkhubHasNightlyTrain: null,
++
+         wslBackendEnabled: false,
+         wslOnly: false,
+         wslDistro: null,
+@@ -166,6 +169,9 @@ describe("DesktopSettings", () => {
+           updateChannelConfiguredByUser: true,
+           forkhubOwner: "",
+           forkhubRepo: ".forkhub",
++          forkhubHasStableTrain: null,
++          forkhubHasNightlyTrain: null,
++
+           wslBackendEnabled: false,
+           wslOnly: false,
+           wslDistro: null,
+@@ -325,6 +331,39 @@ describe("DesktopSettings", () => {
+     ),
+   );
+ 
++  it.effect("persists publisher trains and normalizes them on load", () =>
++    withSettings(
++      Effect.gen(function* () {
++        const environment = yield* DesktopEnvironment.DesktopEnvironment;
++        const fileSystem = yield* FileSystem.FileSystem;
++        const settings = yield* DesktopAppSettings.DesktopAppSettings;
++        yield* settings.setForkHubOwner({
++          owner: "with-fh",
++          hasStableTrain: false,
++          hasNightlyTrain: true,
++        });
++
++        const loaded = yield* settings.load;
++        assert.equal(loaded.forkhubHasStableTrain, false);
++        assert.equal(loaded.forkhubHasNightlyTrain, true);
++        const persisted = JSON.parse(
++          yield* fileSystem.readFileString(environment.desktopSettingsPath),
++        ) as Record<string, unknown>;
++        assert.equal(persisted["forkhubHasStableTrain"], false);
++        assert.equal(persisted["forkhubHasNightlyTrain"], true);
++
++        yield* fileSystem.writeFileString(
++          environment.desktopSettingsPath,
++          JSON.stringify({ forkhubHasStableTrain: "yes" }),
++        );
++        const renormalized = yield* settings.load;
++        assert.isNull(renormalized.forkhubHasStableTrain);
++        assert.isNull(renormalized.forkhubHasNightlyTrain);
++      }),
++      { appVersion: "0.0.43-nightly.20260928.2375.fh.with-fh.4" },
++    ),
++  );
++
+   it.effect("loads lenient persisted desktop settings JSON", () =>
+     withSettings(
+       Effect.gen(function* () {
+@@ -355,6 +394,9 @@ describe("DesktopSettings", () => {
+           updateChannelConfiguredByUser: false,
+           forkhubOwner: "",
+           forkhubRepo: ".forkhub",
++          forkhubHasStableTrain: null,
++          forkhubHasNightlyTrain: null,
++
+           wslBackendEnabled: false,
+           wslOnly: false,
+           wslDistro: null,
+@@ -414,6 +456,9 @@ describe("DesktopSettings", () => {
+             updateChannelConfiguredByUser: true,
+             forkhubOwner: "",
+             forkhubRepo: ".forkhub",
++            forkhubHasStableTrain: null,
++            forkhubHasNightlyTrain: null,
++
+             wslBackendEnabled: false,
+             wslOnly: false,
+             wslDistro: null,
+@@ -465,6 +510,9 @@ describe("DesktopSettings", () => {
+           updateChannelConfiguredByUser: false,
+           forkhubOwner: "",
+           forkhubRepo: ".forkhub",
++          forkhubHasStableTrain: null,
++          forkhubHasNightlyTrain: null,
++
+           wslBackendEnabled: false,
+           wslOnly: false,
+           wslDistro: null,
+@@ -496,6 +544,9 @@ describe("DesktopSettings", () => {
+           updateChannelConfiguredByUser: true,
+           forkhubOwner: "",
+           forkhubRepo: ".forkhub",
++          forkhubHasStableTrain: null,
++          forkhubHasNightlyTrain: null,
++
+           wslBackendEnabled: false,
+           wslOnly: false,
+           wslDistro: null,
+@@ -526,6 +577,9 @@ describe("DesktopSettings", () => {
+           updateChannelConfiguredByUser: false,
+           forkhubOwner: "",
+           forkhubRepo: ".forkhub",
++          forkhubHasStableTrain: null,
++          forkhubHasNightlyTrain: null,
++
+           wslBackendEnabled: false,
+           wslOnly: false,
+           wslDistro: null,
+diff --git a/apps/desktop/src/settings/DesktopAppSettings.ts b/apps/desktop/src/settings/DesktopAppSettings.ts
+index 4bf4de9518..cea911e574 100644
+--- a/apps/desktop/src/settings/DesktopAppSettings.ts
++++ b/apps/desktop/src/settings/DesktopAppSettings.ts
+@@ -46,6 +46,11 @@ export interface DesktopSettings {
+   // catalog publisher on ForkHub builds, empty on stock.
+   readonly forkhubOwner: string;
+   readonly forkhubRepo: DesktopForkHubRepo;
++  // Trains the publisher's catalog serves (null = never checked). Persisted
++  // on every Check and the boot-time auto-check; the Update track selector
++  // only offers supported trains.
++  readonly forkhubHasStableTrain: boolean | null;
++  readonly forkhubHasNightlyTrain: boolean | null;
+   // Was a "local" | "wsl" swap mode in an earlier iteration of the WSL
+   // integration. We now run Windows and WSL backends side by side, so the
+   // setting is just whether the WSL backend should be running alongside the
+@@ -97,6 +102,8 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+   updateChannelConfiguredByUser: false,
+   forkhubOwner: "",
+   forkhubRepo: ".forkhub",
++  forkhubHasStableTrain: null,
++  forkhubHasNightlyTrain: null,
+   wslBackendEnabled: false,
+   wslDistro: null,
+   wslOnly: false,
+@@ -126,6 +133,8 @@ const DesktopSettingsDocument = Schema.Struct({
+   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
+   forkhubOwner: Schema.optionalKey(Schema.String),
+   forkhubRepo: Schema.optionalKey(DesktopForkHubRepoSchema),
++  forkhubHasStableTrain: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
++  forkhubHasNightlyTrain: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+   // Newer form of the WSL toggle. `wslMode` is still accepted on load so
+   // existing on-disk settings keep working; on the next persist we write the
+   // new boolean and the legacy key drops out.
+@@ -196,6 +205,8 @@ export class DesktopAppSettings extends Context.Service<
+     readonly setForkHubOwner: (input: {
+       readonly owner: string;
+       readonly repo?: DesktopForkHubRepo | undefined;
++      readonly hasStableTrain?: boolean | undefined;
++      readonly hasNightlyTrain?: boolean | undefined;
+     }) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
+     readonly setWslBackendEnabled: (
+       enabled: boolean,
+@@ -278,6 +289,8 @@ function normalizeDesktopSettingsDocument(
+     updateChannelConfiguredByUser,
+     forkhubOwner: normalizeForkHubOwner(parsed.forkhubOwner) ?? defaultSettings.forkhubOwner,
+     forkhubRepo: parsed.forkhubRepo === ".forkhub" ? parsed.forkhubRepo : ".forkhub",
++    forkhubHasStableTrain: normalizeOptionalBoolean(parsed.forkhubHasStableTrain),
++    forkhubHasNightlyTrain: normalizeOptionalBoolean(parsed.forkhubHasNightlyTrain),
+     wslBackendEnabled,
+     wslDistro: normalizeWslDistro(parsed.wslDistro),
+     wslOnly: parsed.wslOnly === true,
+@@ -324,6 +337,12 @@ function toDesktopSettingsDocument(
+   if (settings.forkhubRepo !== defaults.forkhubRepo) {
+     document.forkhubRepo = settings.forkhubRepo;
+   }
++  if (settings.forkhubHasStableTrain !== defaults.forkhubHasStableTrain) {
++    document.forkhubHasStableTrain = settings.forkhubHasStableTrain;
++  }
++  if (settings.forkhubHasNightlyTrain !== defaults.forkhubHasNightlyTrain) {
++    document.forkhubHasNightlyTrain = settings.forkhubHasNightlyTrain;
++  }
+   if (settings.wslBackendEnabled !== defaults.wslBackendEnabled) {
+     document.wslBackendEnabled = settings.wslBackendEnabled;
+   }
+@@ -397,13 +416,33 @@ function setUpdateChannel(
+ 
+ function setForkHubOwner(
+   settings: DesktopSettings,
+-  input: { readonly owner: string; readonly repo?: DesktopForkHubRepo | undefined },
++  input: {
++    readonly owner: string;
++    readonly repo?: DesktopForkHubRepo | undefined;
++    readonly hasStableTrain?: boolean | undefined;
++    readonly hasNightlyTrain?: boolean | undefined;
++  },
+ ): DesktopSettings {
+   const owner = normalizeForkHubOwner(input.owner) ?? "";
+   const repo = input.repo ?? settings.forkhubRepo;
+-  return settings.forkhubOwner === owner && settings.forkhubRepo === repo
++  const hasStableTrain = input.hasStableTrain ?? settings.forkhubHasStableTrain;
++  const hasNightlyTrain = input.hasNightlyTrain ?? settings.forkhubHasNightlyTrain;
++  return settings.forkhubOwner === owner &&
++    settings.forkhubRepo === repo &&
++    settings.forkhubHasStableTrain === hasStableTrain &&
++    settings.forkhubHasNightlyTrain === hasNightlyTrain
+     ? settings
+-    : { ...settings, forkhubOwner: owner, forkhubRepo: repo };
++    : {
++        ...settings,
++        forkhubOwner: owner,
++        forkhubRepo: repo,
++        forkhubHasStableTrain: hasStableTrain,
++        forkhubHasNightlyTrain: hasNightlyTrain,
++      };
++}
++
++function normalizeOptionalBoolean(value: unknown): boolean | null {
++  return typeof value === "boolean" ? value : null;
+ }
+ 
+ function setWslBackendEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
+diff --git a/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts b/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
+index bed18dfa40..da3b77d93a 100644
+--- a/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
++++ b/apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
+@@ -431,6 +431,9 @@ describe("DesktopTelemetryPublisher", () => {
+             isForkHubBuild: false,
+             forkhubOwner: null,
+             forkhubRepo: null,
++            forkhubHasStableTrain: null,
++            forkhubHasNightlyTrain: null,
++
+             currentVersion: "1.2.3",
+             hostArch: "arm64",
+             appArch: "arm64",
+diff --git a/apps/desktop/src/updates/DesktopUpdates.test.ts b/apps/desktop/src/updates/DesktopUpdates.test.ts
+index 67e0136613..5204735158 100644
+--- a/apps/desktop/src/updates/DesktopUpdates.test.ts
++++ b/apps/desktop/src/updates/DesktopUpdates.test.ts
+@@ -786,12 +786,21 @@ describe("DesktopUpdates", () => {
+         const updates = yield* DesktopUpdates.DesktopUpdates;
+         yield* updates.configure;
+ 
+-        const state = yield* updates.setForkHubOwner({ owner: "with-fh" });
++        const state = yield* updates.setForkHubOwner({
++          owner: "with-fh",
++          hasStableTrain: false,
++          hasNightlyTrain: true,
++        });
+ 
+         assert.equal(state.forkhubOwner, "with-fh");
+-        assert.equal(state.channel, "latest");
+-        assert.equal((yield* settings.get).forkhubOwner, "with-fh");
+-        assert.equal((yield* updates.getState).channel, "latest");
++        assert.equal(state.forkhubHasStableTrain, false);
++        assert.equal(state.forkhubHasNightlyTrain, true);
++        // Latest is unsupported by a nightly-only publisher: migrate.
++        assert.equal(state.channel, "nightly");
++        const persisted = yield* settings.get;
++        assert.equal(persisted.forkhubOwner, "with-fh");
++        assert.equal(persisted.updateChannel, "nightly");
++        assert.equal((yield* updates.getState).channel, "nightly");
+       }),
+     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+   });
+diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
+index 06c8e2f581..170fd66378 100644
+--- a/apps/desktop/src/updates/DesktopUpdates.ts
++++ b/apps/desktop/src/updates/DesktopUpdates.ts
+@@ -37,7 +37,10 @@ import {
+   isForkHubDerivedVersion,
+   isVersionAllowedOnUpdateChannel,
+   normalizeForkHubOwner,
++  resolveCatalogTrains,
+   resolveForkHubFeedConfig,
++  resolveMigratedUpdateTrack,
++  type ForkHubCatalogTrains,
+ } from "./updateChannels.ts";
+ import {
+   createInitialDesktopUpdateState,
+@@ -189,6 +192,8 @@ export class DesktopUpdates extends Context.Service<
+     readonly setForkHubOwner: (input: {
+       readonly owner: string;
+       readonly repo?: DesktopForkHubRepo | undefined;
++      readonly hasStableTrain?: boolean | undefined;
++      readonly hasNightlyTrain?: boolean | undefined;
+     }) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
+     readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
+     readonly download: Effect.Effect<DesktopUpdateActionResult>;
+@@ -224,13 +229,20 @@ function createBaseUpdateState(
+   channel: DesktopUpdateChannel,
+   enabled: boolean,
+   environment: DesktopEnvironment.DesktopEnvironment["Service"],
+-  forkhub?: { owner: string; repo: DesktopForkHubRepo },
++  forkhub?: {
++    owner: string;
++    repo: DesktopForkHubRepo;
++    hasStableTrain?: boolean | null;
++    hasNightlyTrain?: boolean | null;
++  },
+ ): DesktopUpdateState {
+   const owner = forkhub ? (normalizeForkHubOwner(forkhub.owner) ?? null) : null;
+   return {
+     ...createInitialDesktopUpdateState(environment.appVersion, environment.runtimeInfo, channel, {
+       owner,
+       repo: forkhub?.repo ?? null,
++      hasStableTrain: forkhub?.hasStableTrain ?? null,
++      hasNightlyTrain: forkhub?.hasNightlyTrain ?? null,
+     }),
+     enabled,
+     status: enabled ? "idle" : "disabled",
+@@ -241,6 +253,37 @@ function getCanRetryFromState(state: DesktopUpdateState): boolean {
+   return state.availableVersion !== null || state.downloadedVersion !== null;
+ }
+ 
++// One unauthenticated catalog read: resolves which trains a publisher
++// serves so the Update track list narrows without a click. Best-effort.
++function fetchForkHubCatalogTrains(
++  owner: string,
++  repo: DesktopForkHubRepo,
++): Effect.Effect<ForkHubCatalogTrains, Error> {
++  return Effect.gen(function* () {
++    const response = yield* Effect.tryPromise({
++      try: () =>
++        fetch(
++          `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=20`,
++          { headers: { Accept: "application/vnd.github+json" } },
++        ),
++      catch: (cause) =>
++        new Error(`Could not reach ${owner}/${repo} releases: ${String(cause)}.`, {
++          cause,
++        }),
++    });
++    if (!response.ok) {
++      return yield* Effect.fail(
++        new Error(`Could not check ${owner}/${repo} (HTTP ${response.status}).`),
++      );
++    }
++    const rows = yield* Effect.tryPromise({
++      try: () => response.json() as Promise<unknown>,
++      catch: (cause) => new Error(`Could not parse ${owner}/${repo} releases.`, { cause }),
++    });
++    return resolveCatalogTrains(rows);
++  }).pipe(Effect.timeout("15 seconds"));
++}
++
+ function shouldBroadcastDownloadProgress(
+   currentState: DesktopUpdateState,
+   nextPercent: number,
+@@ -440,6 +483,49 @@ export const make = Effect.gen(function* () {
+ 
+   const shouldEnableAutoUpdates = resolveDisabledReason.pipe(Effect.map(Option.isNone));
+ 
++  // Boot-time train discovery: a fresh ForkHub home knows its publisher
++  // (prefilled) but not its trains, so the Update track list would stay
++  // unfiltered until the first manual Check. One best-effort catalog read
++  // closes that gap; failures leave trains unknown and never fail boot.
++  const refreshForkHubTrainsOnBoot = Effect.gen(function* () {
++    if (!isForkHubDerivedVersion(environment.appVersion)) return;
++    const settings = yield* desktopSettings.get;
++    if (settings.forkhubHasStableTrain !== null || settings.forkhubHasNightlyTrain !== null) {
++      return;
++    }
++    const owner = normalizeForkHubOwner(settings.forkhubOwner);
++    if (!owner) return;
++    const trains = yield* fetchForkHubCatalogTrains(owner, settings.forkhubRepo).pipe(
++      Effect.catch((cause) =>
++        Effect.logWarning("ForkHub boot train discovery skipped", {
++          owner,
++          cause: String(cause),
++        }).pipe(Effect.as(null)),
++      ),
++    );
++    if (!trains || (!trains.hasStableTrain && !trains.hasNightlyTrain)) {
++      if (trains) {
++        yield* Effect.logWarning("ForkHub publisher serves no train; leaving tracks unfiltered", {
++          owner,
++        });
++      }
++      return;
++    }
++    yield* desktopSettings
++      .setForkHubOwner({ owner, repo: settings.forkhubRepo, ...trains })
++      .pipe(Effect.ignore);
++    yield* Effect.logInfo("ForkHub boot train discovery finished", { owner, ...trains });
++    const trained = yield* desktopSettings.get;
++    const track = resolveMigratedUpdateTrack(trained.updateChannel, trains);
++    if (track !== trained.updateChannel) {
++      yield* desktopSettings.setUpdateChannel(track).pipe(Effect.ignore);
++      yield* Effect.logInfo("ForkHub boot migrated update track to a publisher-served train", {
++        from: trained.updateChannel,
++        to: track,
++      });
++    }
++  });
++
+   const checkForUpdates = Effect.fn("desktop.updates.checkForUpdates")(function* (
+     reason: string,
+     actionReservation: "acquire" | "held" = "acquire",
+@@ -935,10 +1021,14 @@ export const make = Effect.gen(function* () {
+ 
+       const settings = yield* desktopSettings.get;
+       const enabled = yield* shouldEnableAutoUpdates;
++      yield* refreshForkHubTrainsOnBoot;
++      const trainedSettings = yield* desktopSettings.get;
+       yield* setState(
+-        createBaseUpdateState(settings.updateChannel, enabled, environment, {
+-          owner: settings.forkhubOwner,
+-          repo: settings.forkhubRepo,
++        createBaseUpdateState(trainedSettings.updateChannel, enabled, environment, {
++          owner: trainedSettings.forkhubOwner,
++          repo: trainedSettings.forkhubRepo,
++          hasStableTrain: trainedSettings.forkhubHasStableTrain,
++          hasNightlyTrain: trainedSettings.forkhubHasNightlyTrain,
+         }),
+       );
+       if (!enabled) {
+@@ -948,9 +1038,9 @@ export const make = Effect.gen(function* () {
+ 
+       yield* electronUpdater.setAutoDownload(false);
+       yield* electronUpdater.setAutoInstallOnAppQuit(false);
+-      yield* applyAutoUpdaterChannel(settings.updateChannel, {
+-        owner: settings.forkhubOwner,
+-        repo: settings.forkhubRepo,
++      yield* applyAutoUpdaterChannel(trainedSettings.updateChannel, {
++        owner: trainedSettings.forkhubOwner,
++        repo: trainedSettings.forkhubRepo,
+       });
+       yield* electronUpdater.setDisableDifferentialDownload(
+         isArm64HostRunningIntelBuild(environment.runtimeInfo),
+@@ -1019,6 +1109,8 @@ export const make = Effect.gen(function* () {
+           createBaseUpdateState(nextChannel, enabled, environment, {
+             owner: settings.forkhubOwner,
+             repo: settings.forkhubRepo,
++            hasStableTrain: settings.forkhubHasStableTrain,
++            hasNightlyTrain: settings.forkhubHasNightlyTrain,
+           }),
+         );
+ 
+@@ -1041,6 +1133,8 @@ export const make = Effect.gen(function* () {
+     setForkHubOwner: Effect.fn("desktop.updates.setForkHubOwner")(function* (input: {
+       readonly owner: string;
+       readonly repo?: DesktopForkHubRepo | undefined;
++      readonly hasStableTrain?: boolean | undefined;
++      readonly hasNightlyTrain?: boolean | undefined;
+     }) {
+       const owner = normalizeForkHubOwner(input.owner);
+       const state = yield* Ref.get(updateStateRef);
+@@ -1065,10 +1159,46 @@ export const make = Effect.gen(function* () {
+           ),
+         );
+         const settings = yield* desktopSettings.get;
++        const hasStableTrain = input.hasStableTrain ?? settings.forkhubHasStableTrain;
++        const hasNightlyTrain = input.hasNightlyTrain ?? settings.forkhubHasNightlyTrain;
++        // The new publisher may not serve the selected track (e.g. moving
++        // to a nightly-only catalog while on stable): migrate to a
++        // supported one instead of polling an empty feed.
++        const track =
++          hasStableTrain !== null && hasNightlyTrain !== null
++            ? resolveMigratedUpdateTrack(settings.updateChannel, {
++                hasStableTrain,
++                hasNightlyTrain,
++              })
++            : settings.updateChannel;
++        if (track !== settings.updateChannel) {
++          yield* desktopSettings.setUpdateChannel(track).pipe(Effect.ignore);
++          yield* logUpdaterInfo("migrated update track to a publisher-served train", {
++            from: settings.updateChannel,
++            to: track,
++            owner,
++          });
++        }
++        yield* desktopSettings
++          .setForkHubOwner({
++            owner,
++            repo,
++            hasStableTrain: hasStableTrain ?? undefined,
++            hasNightlyTrain: hasNightlyTrain ?? undefined,
++          })
++          .pipe(
++            Effect.mapError(
++              (cause) => new DesktopUpdateChannelPersistenceError({ channel: state.channel, cause }),
++            ),
++          );
++        const next = yield* desktopSettings.get;
+         const nextState: DesktopUpdateState = {
+           ...state,
++          channel: track,
+           forkhubOwner: owner,
+           forkhubRepo: repo,
++          forkhubHasStableTrain: hasStableTrain,
++          forkhubHasNightlyTrain: hasNightlyTrain,
+         };
+         yield* setState(nextState);
+         // On a ForkHub build, repoint the feed immediately so the next
+@@ -1076,9 +1206,9 @@ export const make = Effect.gen(function* () {
+         // base state drops any staged download: it came from another
+         // publisher's feed and must not install under the new one.
+         if (isForkHubDerivedVersion(environment.appVersion) && (yield* Ref.get(updaterConfiguredRef))) {
+-          yield* applyAutoUpdaterChannel(settings.updateChannel, { owner, repo });
++          yield* applyAutoUpdaterChannel(track, { owner, repo });
+           const enabled = yield* shouldEnableAutoUpdates;
+-          yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment, { owner, repo }));
++          yield* setState(createBaseUpdateState(track, enabled, environment, { owner, repo, hasStableTrain, hasNightlyTrain }));
+         }
+         return yield* Ref.get(updateStateRef);
+       });
+diff --git a/apps/desktop/src/updates/remoteUpdateFlow.test.ts b/apps/desktop/src/updates/remoteUpdateFlow.test.ts
+index 71e39d8260..380f1bffba 100644
+--- a/apps/desktop/src/updates/remoteUpdateFlow.test.ts
++++ b/apps/desktop/src/updates/remoteUpdateFlow.test.ts
+@@ -19,6 +19,9 @@ function makeState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateSt
+     isForkHubBuild: false,
+     forkhubOwner: null,
+     forkhubRepo: null,
++    forkhubHasStableTrain: null,
++    forkhubHasNightlyTrain: null,
++
+     currentVersion: "1.2.3",
+     hostArch: "arm64",
+     appArch: "arm64",
+diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
+index 1ee5113915..12feca3ed1 100644
+--- a/apps/desktop/src/updates/updateChannels.test.ts
++++ b/apps/desktop/src/updates/updateChannels.test.ts
+@@ -5,8 +5,11 @@ import {
+   isNightlyDesktopVersion,
+   isVersionAllowedOnUpdateChannel,
+   normalizeForkHubOwner,
++  resolveCatalogTrains,
+   resolveDefaultDesktopUpdateChannel,
+   resolveForkHubFeedConfig,
++  resolveMigratedUpdateTrack,
++  resolveVisibleUpdateTracks,
+ } from "./updateChannels.ts";
+ 
+ describe("updateChannels", () => {
+@@ -87,4 +90,57 @@ describe("updateChannels", () => {
+     );
+     expect(resolveDefaultDesktopUpdateChannel("0.0.42-fh.with-fh.1")).toBe("latest");
+   });
++
++  it("detects catalog trains from versioned updater tags only", () => {
++    expect(
++      resolveCatalogTrains([
++        { tag_name: "pingdotgg-t3code--v0.0.43-nightly.20260928.2375-fh1", draft: false },
++        { tag_name: "v0.0.43-nightly.20260928.2375.fh.with-fh.1", draft: false },
++        { tag_name: "v0.0.42-fh.with-fh.1", draft: false },
++      ]),
++    ).toEqual({ hasStableTrain: true, hasNightlyTrain: true });
++    expect(resolveCatalogTrains([{ tag_name: "v0.0.43-nightly.20260928.2375.fh.with-fh.1" }])).toEqual(
++      { hasStableTrain: false, hasNightlyTrain: true },
++    );
++    expect(
++      resolveCatalogTrains([
++        { tag_name: "v0.0.41-preview.20260914.1683" },
++        { tag_name: "pingdotgg-t3code--v9.9.9-fh1" },
++        { tag_name: "v1.0.0-pr.1", draft: false },
++      ]),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: false });
++    expect(resolveCatalogTrains([{ tag_name: "v1.0.0", draft: true }])).toEqual({
++      hasStableTrain: false,
++      hasNightlyTrain: false,
++    });
++    expect(resolveCatalogTrains("nope")).toEqual({ hasStableTrain: false, hasNightlyTrain: false });
++  });
++
++  it("only offers tracks the publisher serves", () => {
++    expect(resolveVisibleUpdateTracks({ hasStableTrain: null, hasNightlyTrain: null })).toEqual([
++      "latest",
++      "nightly",
++    ]);
++    expect(resolveVisibleUpdateTracks({ hasStableTrain: false, hasNightlyTrain: true })).toEqual([
++      "nightly",
++    ]);
++    expect(resolveVisibleUpdateTracks({ hasStableTrain: true, hasNightlyTrain: false })).toEqual([
++      "latest",
++    ]);
++  });
++
++  it("migrates the track when the publisher drops it", () => {
++    expect(
++      resolveMigratedUpdateTrack("latest", { hasStableTrain: true, hasNightlyTrain: true }),
++    ).toBe("latest");
++    expect(
++      resolveMigratedUpdateTrack("latest", { hasStableTrain: false, hasNightlyTrain: true }),
++    ).toBe("nightly");
++    expect(
++      resolveMigratedUpdateTrack("nightly", { hasStableTrain: true, hasNightlyTrain: false }),
++    ).toBe("latest");
++    expect(
++      resolveMigratedUpdateTrack("nightly", { hasStableTrain: false, hasNightlyTrain: true }),
++    ).toBe("nightly");
++  });
+ });
+diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
+index da470ba3ee..050ff8a834 100644
+--- a/apps/desktop/src/updates/updateChannels.ts
++++ b/apps/desktop/src/updates/updateChannels.ts
+@@ -64,6 +64,66 @@ export function resolveForkHubFeedConfig(input: {
+   return { provider: "github", owner, repo };
+ }
+ 
++export interface ForkHubCatalogTrains {
++  readonly hasStableTrain: boolean;
++  readonly hasNightlyTrain: boolean;
++}
++
++interface CatalogReleaseRow {
++  readonly tag_name?: unknown;
++  readonly draft?: unknown;
++}
++
++// Train detection runs on versioned updater tags only (`vX.Y.Z…`): bundle
++// releases mirror the same trains and carry no version of their own.
++// Preview/PR cuts serve no train. Mirrors the renderer's Check classifier
++// (apps/web/src/components/forkHub.logic.ts) for boot-time use in main.
++export function resolveCatalogTrains(rows: unknown): ForkHubCatalogTrains {
++  const releases = Array.isArray(rows) ? rows.filter(isUsableCatalogRelease) : [];
++  const versionTags = releases
++    .map((row) => (row as CatalogReleaseRow).tag_name as string)
++    .filter((tag) => /^v\d+\.\d+\.\d+/.test(tag));
++  return {
++    hasStableTrain: versionTags.some(
++      (tag) =>
++        !/-nightly\.\d{8}\./.test(tag) &&
++        !/-preview\.\d{8}\./.test(tag) &&
++        !/-pr\./.test(tag),
++    ),
++    hasNightlyTrain: versionTags.some((tag) => /-nightly\.\d{8}\./.test(tag)),
++  };
++}
++
++function isUsableCatalogRelease(row: unknown): boolean {
++  if (typeof row !== "object" || row === null) return false;
++  const candidate = row as CatalogReleaseRow;
++  return candidate.draft !== true && typeof candidate.tag_name === "string";
++}
++
++// Which tracks the Update track selector offers. Unknown trains (never
++// Checked) leave both; a publisher serving one train narrows the list.
++export function resolveVisibleUpdateTracks(input: {
++  readonly hasStableTrain: boolean | null;
++  readonly hasNightlyTrain: boolean | null;
++}): ReadonlyArray<DesktopUpdateChannel> {
++  const tracks: Array<DesktopUpdateChannel> = [];
++  if (input.hasStableTrain !== false) tracks.push("latest");
++  if (input.hasNightlyTrain !== false) tracks.push("nightly");
++  return tracks;
++}
++
++// After a publisher (re-)check, the selected track may no longer exist
++// (e.g. moving to a nightly-only catalog while on stable). Migrate to a
++// supported track, preferring the current one and then nightly.
++export function resolveMigratedUpdateTrack(
++  current: DesktopUpdateChannel,
++  trains: ForkHubCatalogTrains,
++): DesktopUpdateChannel {
++  if (current === "latest" && trains.hasStableTrain) return "latest";
++  if (current === "nightly" && trains.hasNightlyTrain) return "nightly";
++  return trains.hasNightlyTrain ? "nightly" : "latest";
++}
++
+ /**
+  * Whether an updater-advertised version may be installed on a channel.
+  * Provenance must match the install: a `.fh` build installs on ForkHub
+diff --git a/apps/desktop/src/updates/updateMachine.ts b/apps/desktop/src/updates/updateMachine.ts
+index e293c069b1..3cb16b333b 100644
+--- a/apps/desktop/src/updates/updateMachine.ts
++++ b/apps/desktop/src/updates/updateMachine.ts
+@@ -21,7 +21,12 @@ export function createInitialDesktopUpdateState(
+   currentVersion: string,
+   runtimeInfo: DesktopRuntimeInfo,
+   channel: DesktopUpdateChannel,
+-  forkhub?: { owner: string | null; repo: DesktopUpdateState["forkhubRepo"] },
++  forkhub?: {
++    owner: string | null;
++    repo: DesktopUpdateState["forkhubRepo"];
++    hasStableTrain?: boolean | null;
++    hasNightlyTrain?: boolean | null;
++  },
+ ): DesktopUpdateState {
+   return {
+     enabled: false,
+@@ -30,6 +35,8 @@ export function createInitialDesktopUpdateState(
+     isForkHubBuild: isForkHubDerivedVersion(currentVersion),
+     forkhubOwner: forkhub?.owner ?? null,
+     forkhubRepo: forkhub?.repo ?? null,
++    forkhubHasStableTrain: forkhub?.hasStableTrain ?? null,
++    forkhubHasNightlyTrain: forkhub?.hasNightlyTrain ?? null,
+     currentVersion,
+     hostArch: runtimeInfo.hostArch,
+     appArch: runtimeInfo.appArch,
+diff --git a/apps/web/src/components/desktopUpdate.logic.test.ts b/apps/web/src/components/desktopUpdate.logic.test.ts
+index 6480cb3a6b..0dc513b112 100644
+--- a/apps/web/src/components/desktopUpdate.logic.test.ts
++++ b/apps/web/src/components/desktopUpdate.logic.test.ts
+@@ -12,6 +12,7 @@ import {
+   getDesktopUpdateReleaseUrl,
+   isDesktopUpdateButtonDisabled,
+   resolveDesktopUpdateButtonAction,
++  resolveVisibleUpdateTracks,
+   shouldShowArm64IntelBuildWarning,
+   shouldToastDesktopUpdateActionResult,
+ } from "./desktopUpdate.logic";
+@@ -23,6 +24,9 @@ const baseState: DesktopUpdateState = {
+   isForkHubBuild: false,
+   forkhubOwner: null,
+   forkhubRepo: null,
++  forkhubHasStableTrain: null,
++  forkhubHasNightlyTrain: null,
++
+   currentVersion: "1.0.0",
+   hostArch: "x64",
+   appArch: "x64",
+@@ -370,3 +374,21 @@ describe("getDesktopUpdateButtonTooltip", () => {
+     );
+   });
+ });
++
++describe("resolveVisibleUpdateTracks", () => {
++  it("offers both tracks when trains are unknown", () => {
++    expect(
++      resolveVisibleUpdateTracks({ forkhubHasStableTrain: null, forkhubHasNightlyTrain: null }),
++    ).toEqual(["latest", "nightly"]);
++    expect(resolveVisibleUpdateTracks(null)).toEqual(["latest", "nightly"]);
++  });
++
++  it("narrows to the publisher's trains", () => {
++    expect(
++      resolveVisibleUpdateTracks({ forkhubHasStableTrain: false, forkhubHasNightlyTrain: true }),
++    ).toEqual(["nightly"]);
++    expect(
++      resolveVisibleUpdateTracks({ forkhubHasStableTrain: true, forkhubHasNightlyTrain: false }),
++    ).toEqual(["latest"]);
++  });
++});
+diff --git a/apps/web/src/components/desktopUpdate.logic.ts b/apps/web/src/components/desktopUpdate.logic.ts
+index 2d61976098..83d1d0de3e 100644
+--- a/apps/web/src/components/desktopUpdate.logic.ts
++++ b/apps/web/src/components/desktopUpdate.logic.ts
+@@ -1,4 +1,8 @@
+-import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
++import type {
++  DesktopUpdateActionResult,
++  DesktopUpdateChannel,
++  DesktopUpdateState,
++} from "@t3tools/contracts";
+ 
+ export type DesktopUpdateButtonAction = "download" | "install" | "none";
+ 
+@@ -25,6 +29,21 @@ export function getDesktopUpdateReleaseHistoryUrl(): string {
+   return DESKTOP_RELEASE_HISTORY_URL;
+ }
+ 
++/**
++ * Which tracks the Update track selector offers. Unknown trains (never
++ * Checked) leave both; a publisher serving one train narrows the list —
++ * e.g. with-fh serves nightly only, so its installs offer just Nightly.
++ */
++export function resolveVisibleUpdateTracks(state: {
++  readonly forkhubHasStableTrain: boolean | null;
++  readonly forkhubHasNightlyTrain: boolean | null;
++} | null): ReadonlyArray<DesktopUpdateChannel> {
++  const tracks: Array<DesktopUpdateChannel> = [];
++  if (state?.forkhubHasStableTrain !== false) tracks.push("latest");
++  if (state?.forkhubHasNightlyTrain !== false) tracks.push("nightly");
++  return tracks;
++}
++
+ /**
+  * ForkHub builds update from a publisher's `.forkhub` releases, so
+  * release links must point at that repo instead of upstream.
+diff --git a/apps/web/src/components/desktopUpdate.toast.test.tsx b/apps/web/src/components/desktopUpdate.toast.test.tsx
+index 7d896c37f7..ae03bdd722 100644
+--- a/apps/web/src/components/desktopUpdate.toast.test.tsx
++++ b/apps/web/src/components/desktopUpdate.toast.test.tsx
+@@ -46,6 +46,9 @@ function downloadedState(overrides: Partial<DesktopUpdateState> = {}): DesktopUp
+     isForkHubBuild: false,
+     forkhubOwner: null,
+     forkhubRepo: null,
++    forkhubHasStableTrain: null,
++    forkhubHasNightlyTrain: null,
++
+     currentVersion: "0.0.29",
+     hostArch: "arm64",
+     appArch: "arm64",
+diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
+index e5b51f885e..9aaa573875 100644
+--- a/apps/web/src/components/settings/SettingsPanels.tsx
++++ b/apps/web/src/components/settings/SettingsPanels.tsx
+@@ -56,6 +56,7 @@ import {
+   getDesktopUpdateInstallConfirmationMessage,
+   isDesktopUpdateButtonDisabled,
+   resolveDesktopUpdateButtonAction,
++  resolveVisibleUpdateTracks,
+ } from "../../components/desktopUpdate.logic";
+ import {
+   checkForkHubOwner,
+@@ -293,6 +294,7 @@ function AboutVersionSection() {
+   const selectedUpdateChannel = updateState?.channel ?? "latest";
+   const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
+   const isForkHubBuild = updateState?.isForkHubBuild ?? false;
++  const visibleUpdateTracks = resolveVisibleUpdateTracks(updateState);
+   const storedForkhubOwner = updateState?.forkhubOwner ?? null;
+   const storedForkhubRepo = updateState?.forkhubRepo ?? null;
+   const forkhubOwnerValue = forkhubOwnerInput ?? storedForkhubOwner ?? "";
+@@ -342,7 +344,12 @@ function AboutVersionSection() {
+     setForkhubCheck({ status: "checking" });
+     try {
+       const check = await checkForkHubOwner(typed);
+-      await bridge.setForkHubOwner({ owner: check.owner, repo: check.repo });
++      await bridge.setForkHubOwner({
++        owner: check.owner,
++        repo: check.repo,
++        hasStableTrain: check.hasStableTrain,
++        hasNightlyTrain: check.hasNightlyTrain,
++      });
+       setForkhubOwnerInput(null);
+       setForkhubCheck({ status: "valid", check });
+       toastManager.add(
+@@ -516,12 +523,16 @@ function AboutVersionSection() {
+                   </SelectValue>
+                 </SelectTrigger>
+                 <SelectPopup align="end" alignItemWithTrigger={false}>
+-                  <SelectItem hideIndicator value="latest">
+-                    Stable
+-                  </SelectItem>
+-                  <SelectItem hideIndicator value="nightly">
+-                    Nightly
+-                  </SelectItem>
++                  {visibleUpdateTracks.includes("latest") ? (
++                    <SelectItem hideIndicator value="latest">
++                      Stable
++                    </SelectItem>
++                  ) : null}
++                  {visibleUpdateTracks.includes("nightly") ? (
++                    <SelectItem hideIndicator value="nightly">
++                      Nightly
++                    </SelectItem>
++                  ) : null}
+                 </SelectPopup>
+               </Select>
+             }
+diff --git a/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx b/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
+index 131bdb9165..97f6fae58e 100644
+--- a/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
++++ b/apps/web/src/components/sidebar/SidebarUpdatePill.test.tsx
+@@ -14,6 +14,9 @@ const nightlyState: DesktopUpdateState = {
+   isForkHubBuild: false,
+   forkhubOwner: null,
+   forkhubRepo: null,
++  forkhubHasStableTrain: null,
++  forkhubHasNightlyTrain: null,
++
+   currentVersion: "0.0.35",
+   hostArch: "arm64",
+   appArch: "arm64",
+diff --git a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
+index 5294733943..0e6307fcf3 100644
+--- a/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
++++ b/apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
+@@ -25,6 +25,9 @@ const baseState: DesktopUpdateState = {
+   isForkHubBuild: false,
+   forkhubOwner: null,
+   forkhubRepo: null,
++  forkhubHasStableTrain: null,
++  forkhubHasNightlyTrain: null,
++
+   currentVersion: "0.0.35",
+   hostArch: "arm64",
+   appArch: "arm64",
+diff --git a/apps/web/src/state/desktopUpdate.test.ts b/apps/web/src/state/desktopUpdate.test.ts
+index 2fa4cc8374..99d1ec2765 100644
+--- a/apps/web/src/state/desktopUpdate.test.ts
++++ b/apps/web/src/state/desktopUpdate.test.ts
+@@ -12,6 +12,9 @@ const baseState: DesktopUpdateState = {
+   isForkHubBuild: false,
+   forkhubOwner: null,
+   forkhubRepo: null,
++  forkhubHasStableTrain: null,
++  forkhubHasNightlyTrain: null,
++
+   currentVersion: "1.0.0",
+   hostArch: "x64",
+   appArch: "x64",
+diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
+index 02754ab97a..07f63930f0 100644
+--- a/packages/contracts/src/ipc.ts
++++ b/packages/contracts/src/ipc.ts
+@@ -295,6 +295,10 @@ export interface DesktopUpdateState {
+   isForkHubBuild: boolean;
+   forkhubOwner: string | null;
+   forkhubRepo: DesktopForkHubRepo | null;
++  // Trains the publisher's catalog serves, refreshed on every Check.
++  // Null means unknown (never checked): the track list stays unfiltered.
++  forkhubHasStableTrain: boolean | null;
++  forkhubHasNightlyTrain: boolean | null;
+   currentVersion: string;
+   hostArch: DesktopRuntimeArch;
+   appArch: DesktopRuntimeArch;
+@@ -329,6 +333,8 @@ export const DesktopUpdateStateSchema = Schema.Struct({
+   isForkHubBuild: Schema.Boolean,
+   forkhubOwner: Schema.NullOr(DesktopForkHubOwnerSchema),
+   forkhubRepo: Schema.NullOr(DesktopForkHubRepoSchema),
++  forkhubHasStableTrain: Schema.NullOr(Schema.Boolean),
++  forkhubHasNightlyTrain: Schema.NullOr(Schema.Boolean),
+   currentVersion: Schema.String,
+   hostArch: DesktopRuntimeArchSchema,
+   appArch: DesktopRuntimeArchSchema,
+@@ -1258,6 +1264,8 @@ export interface DesktopBridge {
+   setForkHubOwner: (input: {
+     readonly owner: string;
+     readonly repo?: DesktopForkHubRepo;
++    readonly hasStableTrain?: boolean;
++    readonly hasNightlyTrain?: boolean;
+   }) => Promise<DesktopUpdateState>;
+   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
+   downloadUpdate: () => Promise<DesktopUpdateActionResult>;

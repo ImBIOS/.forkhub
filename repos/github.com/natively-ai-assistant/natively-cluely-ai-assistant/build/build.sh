@@ -122,6 +122,13 @@ export PATH="$PWD/node_modules/.bin:$PATH"
 say "stamping version $FH_VERSION"
 npm pkg set "version=$FH_VERSION" >>"$LOG" 2>&1 || fail_soft "version stamp failed"
 
+# --- deb maintainer (electron-builder requires an author email for the
+# deb control file; upstream leaves `author` empty and has no Linux CI).
+# Fork-build identity only — the patch itself stays free of fork branding.
+say "setting deb maintainer"
+npm pkg set "build.linux.maintainer=Natively ForkHub <forkhub@users.noreply.github.com>" >>"$LOG" 2>&1 \
+  || fail_soft "maintainer stamp failed"
+
 # --- build (mirrors package.json app:build, Linux subset) ---
 say "vite build"
 npm run build >>"$LOG" 2>&1 || fail_soft "vite build failed"

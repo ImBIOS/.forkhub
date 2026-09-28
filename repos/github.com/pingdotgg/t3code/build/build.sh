@@ -43,7 +43,7 @@ case "$VER" in
 esac
 
 # ForkHub provenance version: <upstream>.<suffix>.<owner>.<n>, e.g.
-# 0.0.43-nightly.20260924.2187.fh.imbios.1. The prerelease extension keeps
+# 0.0.43-nightly.20260924.2187.fh.with-fh.1. The prerelease extension keeps
 # train ordering (nightly dates still compare) while advertising the fork;
 # stock tracks refuse suffixed builds outright (see
 # isVersionAllowedOnUpdateChannel). n counts existing updater releases for
@@ -59,7 +59,7 @@ OWNER=$(printf '%s' "$REPO" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')
 # Joiner keeps the version valid semver: a base that already has a
 # prerelease part (nightly) extends it with a dot, a bare base (stable)
 # needs the dash — electron-builder mangles invalid versions
-# (0.0.42.fh.imbios.1 once shipped as 0.0.4-2.fh.imbios.1).
+# (0.0.42-fh example predates the publisher move; an invalid form once shipped as 0.0.4-2.)
 case "$VER" in
   *-*) JOINER="." ;;
   *) JOINER="-" ;;
@@ -217,7 +217,7 @@ build_cli_archive() {
   node scripts/smoke-cli-archive.ts --archive "$DIST"/cli-build/* --expect-version "$FH_VERSION" >>"$LOG" 2>&1 || return 1
   mv "$DIST"/cli-build/* "$DIST"/ || return 1
   rm -rf "$DIST/cli-build" 2>/dev/null || true
-  # npm-installable tarball (@imbios/fh-t3, bin t3) so the CLI runs via
+  # npm-installable tarball (@with-fh/fh-t3, bin t3) so the CLI runs via
   # `pnpx <release-asset-URL>` or `fh run` with no registry involved. Same
   # tree as the archive, repacked with a package.json; the binary keeps its
   # `t3` name (fh run execs from cache and pnpx one-shots are ephemeral, so

@@ -47,3 +47,10 @@ sh repos/github.com/pingdotgg/t3code/patches/t3code-forkhub-update-track-bb0ed06
    home copies the three state files from the stock home and leaves a
    marker; reruns, existing settings, deliberate resets, stock builds, and
    explicit `T3CODE_HOME` all skip (`DesktopForkHubStockImport.test.ts`).
+
+10. **Publisher model**: no `forkhub` update track exists; a ForkHub build
+    polls its publisher's catalog on the selected latest/nightly track;
+    persisted `forkhub` values migrate to nightly keeping the publisher;
+    Check reports stable/nightly/both/neither trains; fresh ForkHub homes
+    default to publisher `with-fh`; `.fh` versions install on ForkHub
+    builds only.

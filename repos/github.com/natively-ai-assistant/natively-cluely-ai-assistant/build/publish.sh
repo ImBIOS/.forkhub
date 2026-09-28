@@ -41,12 +41,34 @@ for f in "$DIST"/*.AppImage "$DIST"/latest-linux.yml "$DIST"/*.blockmap; do
 done
 [ -n "$FILES" ] || { echo "no uploadable updater files; skipping"; exit 0; }
 
+# Create the release WITHOUT files first: asset uploads right after a
+# create can 404 while GitHub propagates the release object, and parallel
+# matrix runs may race on the same tag — both are handled below.
 if gh release view "v$VER" --repo "$REPO" >/dev/null 2>&1; then
-  echo "updating updater release v$VER"
-  # shellcheck disable=SC2086
-  gh release upload "v$VER" $FILES --repo "$REPO" --clobber
+  echo "updater release v$VER already exists; uploading into it"
 else
   echo "creating updater release v$VER"
-  # shellcheck disable=SC2086
-  gh release create "v$VER" $FILES --repo "$REPO" --title "Natively ForkHub v$VER" --notes "ForkHub (patched) Linux build of upstream natively-ai-assistant/natively-cluely-ai-assistant $TAG. The matching natively-ai-assistant-natively-cluely-ai-assistant-$TAG-fh* release carries the full bundle notes."
+  if ! gh release create "v$VER" --repo "$REPO" --title "Natively ForkHub v$VER" --notes "ForkHub (patched) Linux build of upstream natively-ai-assistant/natively-cluely-ai-assistant $TAG. The matching natively-ai-assistant-natively-cluely-ai-assistant-$TAG-fh* release carries the full bundle notes."; then
+    # Lost a race with a parallel run that created it first — proceed to upload.
+    echo "create failed; re-checking for v$VER"
+    sleep 10
+    gh release view "v$VER" --repo "$REPO" >/dev/null 2>&1 || { echo "updater release v$VER still missing; skipping"; exit 0; }
+  fi
 fi
+
+# Upload with retries: fresh releases can 404 asset uploads for a short
+# window, and large AppImages occasionally drop mid-upload.
+# shellcheck disable=SC2086
+for f in $FILES; do
+  ok=0
+  for attempt in 1 2 3; do
+    if gh release upload "v$VER" "$f" --repo "$REPO" --clobber; then
+      ok=1
+      break
+    fi
+    echo "upload of $(basename "$f") failed (attempt $attempt/3); waiting before retry"
+    sleep $((attempt * 15))
+  done
+  [ "$ok" = "1" ] || { echo "upload of $(basename "$f") failed after 3 attempts"; exit 1; }
+done
+echo "updater release v$VER published"

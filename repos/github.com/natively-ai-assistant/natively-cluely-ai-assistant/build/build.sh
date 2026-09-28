@@ -105,6 +105,14 @@ fi
 
 # --- deps (lockfile-pinned). postinstall rebuilds sharp/native addons,
 # verifies vendored models, and checks the native arch — same as local dev.
+#
+# onnxruntime-node is dev-only (electron-builder `files` excludes it from
+# the packaged app), and its postinstall downloads a GPU NuGet package
+# whose contents are broken for linux (it hunts a win-x64 CUDA lib and
+# throws). Skip its native download; CPU inference is unaffected and the
+# shipped app never contains it.
+export ONNXRUNTIME_NODE_INSTALL=skip
+export ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 say "npm ci"
 npm ci >>"$LOG" 2>&1 || fail_soft "npm ci failed (see BUILD_LOG.md)"
 export PATH="$PWD/node_modules/.bin:$PATH"

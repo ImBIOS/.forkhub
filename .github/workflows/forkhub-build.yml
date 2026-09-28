@@ -40,6 +40,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   discover:
@@ -184,7 +185,29 @@ jobs:
 
       - name: Apply intent stack in manifest order + verify gate
         if: steps.skip-check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+          # Drift auto-triage (user-explicit: daily nightly pipeline must
+          # reimplement and rebuild without a human in the loop). On apply
+          # or verify failure, dispatches ONE `forkhub reimplement` run for
+          # this target+patch+tag, then fails so the fresh realization
+          # rebuilds on promote. Skips dispatch while a needs-human-decision
+          # issue is already open for this patch (no daily agent spend
+          # while a human decision is pending).
+          dispatch_reimplement() {
+            patch_id="$1"
+            phase="$2"
+            if gh issue list --repo "$GITHUB_REPOSITORY" --state open --label needs-human-decision               --search "in:title [$patch_id] drift" --json number --jq -e '.[0].number' >/dev/null 2>&1; then
+              echo "needs-human-decision issue already open for $patch_id; not dispatching"
+              return 0
+            fi
+            echo "dispatching forkhub reimplement for $patch_id @ $UP ($phase failure)"
+            gh workflow run "forkhub reimplement" --repo "$GITHUB_REPOSITORY" \
+              -f target="${{ matrix.pair.target }}" -f patch="$patch_id" -f tag="$UP" || true
+          }
+
           set -euo pipefail
           # Absolute paths: git -C changes directory, so relative patch
           # paths would resolve inside the build checkout (bug).
@@ -210,11 +233,19 @@ jobs:
               echo "::warning::$id reference.diff has no usable hunks — skipping (re-capture or re-derive)"
               continue
             fi
-            git -C "$BD" apply --check "$CLEAN"
+            if ! git -C "$BD" apply --check "$CLEAN"; then
+              echo "::error::$id no longer applies to $UP — drift detected"
+              dispatch_reimplement "$id" "apply"
+              exit 1
+            fi
             git -C "$BD" apply "$CLEAN"
             # -f (not -x): verify.sh files are checked in non-executable.
             if [ -f "$p/verify.sh" ]; then
-              (cd "$BD" && sh "$p/verify.sh")
+              if ! (cd "$BD" && sh "$p/verify.sh"); then
+                echo "::error::$id verify failed on $UP — drift detected"
+                dispatch_reimplement "$id" "verify"
+                exit 1
+              fi
             fi
           done
 

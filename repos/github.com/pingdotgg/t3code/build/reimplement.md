@@ -18,8 +18,11 @@ Manual dispatch only (Actions → `forkhub reimplement` → Run workflow):
 | `variant` | `xhigh` | provider effort level |
 | `timeout-minutes` | `30` | wall budget per patch; `timeout` kills, router files it |
 
-Auto-trigger on build failure is deliberately NOT wired (v2 roadmap):
-a red apply step today means "run this workflow by hand".
+Auto-trigger: the build workflow dispatches this workflow itself when a
+patch fails to apply (or verify) on a new tag — one run per
+target+patch+tag, skipped while a `needs-human-decision` issue for the
+patch is open. A red apply step can still mean "run by hand" when the
+auto-dispatch is suppressed or the router files HUMAN/FAIL.
 
 ## Secrets / variables (repo scope)
 

@@ -33,3 +33,12 @@
 ```bash
 sh repos/github.com/pingdotgg/t3code/patches/t3code-forkhub-update-track-bb0ed06f/verify.sh
 ```
+
+8. **Side-by-side isolation**: a packaged ForkHub version resolves its
+   backend home under `~/.t3-forkhub`, its Electron profile to
+   `t3code-forkhub`, and its Linux identity to the ForkHub entry/wmClass
+   while stock keeps `~/.t3`/`t3code`; a malformed
+   `desktop-settings.json` under a ForkHub version boots on defaults and
+   leaves a `.corrupt.bak` sidecar, while stock leaves no sidecar
+   (`DesktopEnvironment.test.ts`, `DesktopEarlyElectronStartup.test.ts`,
+   `DesktopAppSettings.test.ts`).

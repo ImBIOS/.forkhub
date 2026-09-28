@@ -1858,3 +1858,408 @@ index 02e514d83f..be5434781b 100644
 +  // so a patched install is never mistaken for a stock one.
 +  if (isForkHubDesktopBuild()) return "T3 Code x ForkHub";
    return resolveDesktopUpdateChannel(version) === "nightly"
+diff --git a/apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts b/apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
+index 70441702e0..9d039be485 100644
+--- a/apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
++++ b/apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
+@@ -15,6 +15,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       env: { T3CODE_HOME: "/home/user/.t3-test" },
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: (path) => {
+         assert.equal(path, "/home/user/.t3-test/userdata/desktop-settings.json");
+         return JSON.stringify({ linuxPasswordStore: "kwallet6" });
+@@ -29,6 +30,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       env: { T3CODE_HOME: "/home/user/.t3-test" },
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: () => `{
+         // manually edited setting
+         "linuxPasswordStore": "gnome-libsecret",
+@@ -43,6 +45,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       env: {},
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: () => {
+         throw new Error("missing");
+       },
+@@ -56,6 +59,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       env: { T3CODE_HOME: "/" },
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: (path) => {
+         assert.equal(path, "/userdata/desktop-settings.json");
+         return JSON.stringify({ linuxPasswordStore: "kwallet6" });
+@@ -74,6 +78,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       },
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: (path) => {
+         assert.equal(path, "/home/user/.t3-test/userdata/desktop-settings.json");
+         return JSON.stringify({ linuxPasswordStore: "auto" });
+@@ -95,6 +100,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       },
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: (path) => {
+         assert.equal(path, "/home/user/.t3/dev/desktop-settings.json");
+         return JSON.stringify({ linuxPasswordStore: "kwallet" });
+@@ -104,6 +110,41 @@ describe("DesktopEarlyElectronStartup", () => {
+     assert.equal(preference, "kwallet");
+   });
+ 
++  it("resolves ForkHub installs to their own settings home and Electron identity", () => {
++    const options = resolveEarlyLinuxElectronOptions({
++      env: {},
++      homeDirectory: "/home/user",
++      joinPath,
++      appVersion: "0.0.43-nightly.20260924.2187.fh.imbios.1",
++      readFileString: (path) => {
++        assert.equal(path, "/home/user/.t3-forkhub/userdata/desktop-settings.json");
++        return JSON.stringify({ linuxPasswordStore: "kwallet6" });
++      },
++    });
++
++    assert.deepEqual(options, {
++      isDevelopment: false,
++      linuxWmClass: "t3code-forkhub",
++      linuxDesktopEntryName: "com.t3tools.T3Code.ForkHub.desktop",
++      passwordStore: "kwallet6",
++    });
++  });
++
++  it("keeps an explicit T3CODE_HOME for ForkHub installs", () => {
++    const preference = resolveEarlyLinuxPasswordStorePreference({
++      env: { T3CODE_HOME: "/home/user/.t3-test" },
++      homeDirectory: "/home/user",
++      joinPath,
++      appVersion: "0.0.43-nightly.20260924.2187.fh.imbios.1",
++      readFileString: (path) => {
++        assert.equal(path, "/home/user/.t3-test/userdata/desktop-settings.json");
++        return JSON.stringify({ linuxPasswordStore: "kwallet" });
++      },
++    });
++
++    assert.equal(preference, "kwallet");
++  });
++
+   it("treats whitespace-only T3CODE_HOME as unconfigured in development", () => {
+     const preference = resolveEarlyLinuxPasswordStorePreference({
+       env: {
+@@ -112,6 +153,7 @@ describe("DesktopEarlyElectronStartup", () => {
+       },
+       homeDirectory: "/home/user",
+       joinPath,
++      appVersion: "0.0.22",
+       readFileString: (path) => {
+         assert.equal(path, "/home/user/.t3/dev/desktop-settings.json");
+         return JSON.stringify({ linuxPasswordStore: "gnome-libsecret" });
+diff --git a/apps/desktop/src/app/DesktopEarlyElectronStartup.ts b/apps/desktop/src/app/DesktopEarlyElectronStartup.ts
+index 95922bdfdc..595ad35afb 100644
+--- a/apps/desktop/src/app/DesktopEarlyElectronStartup.ts
++++ b/apps/desktop/src/app/DesktopEarlyElectronStartup.ts
+@@ -9,6 +9,7 @@ import {
+   type LinuxPasswordStoreSwitch,
+   type LinuxPasswordStorePreference,
+ } from "../linuxSecretStorage.ts";
++import { isForkHubDerivedVersion } from "../updates/updateChannels.ts";
+ import {
+   resolveDesktopBaseDir,
+   resolveDesktopStateDir,
+@@ -20,6 +21,9 @@ interface EarlyDesktopSettingsInput {
+   readonly homeDirectory: string;
+   readonly joinPath: JoinPath;
+   readonly readFileString: (path: string) => string;
++  // Pre-ready Electron setup runs before app services exist; the caller passes
++  // app.getVersion() so ForkHub installs resolve their own isolated paths.
++  readonly appVersion: string;
+ }
+ 
+ type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
+@@ -31,8 +35,17 @@ export interface EarlyLinuxElectronOptions {
+   readonly passwordStore: LinuxPasswordStoreSwitch | null;
+ }
+ 
+-export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
+-  isDevelopment ? "com.t3tools.T3Code.Development.desktop" : "com.t3tools.T3Code.desktop";
++export const resolveLinuxDesktopEntryName = (
++  isDevelopment: boolean,
++  isForkHubBuild = false,
++): string => {
++  if (isDevelopment) {
++    return "com.t3tools.T3Code.Development.desktop";
++  }
++  // A ForkHub install writes its own launcher entry so it never clobbers the
++  // stock entry file (last launch would otherwise win the Exec target).
++  return isForkHubBuild ? "com.t3tools.T3Code.ForkHub.desktop" : "com.t3tools.T3Code.desktop";
++};
+ 
+ const trimNonEmpty = (value: string | undefined): string | null => {
+   const trimmed = value?.trim();
+@@ -53,12 +66,14 @@ function resolveEarlyDesktopSettingsPath(input: {
+   readonly env: NodeJS.ProcessEnv;
+   readonly homeDirectory: string;
+   readonly joinPath: JoinPath;
++  readonly appVersion: string;
+ }): string {
+   const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+   const baseDir = resolveDesktopBaseDir({
+     homeDirectory: input.homeDirectory,
+     joinPath: input.joinPath,
+     t3Home,
++    isForkHubBuild: isForkHubDerivedVersion(input.appVersion),
+   });
+   const stateDir = resolveDesktopStateDir({
+     baseDir,
+@@ -86,10 +101,11 @@ export function resolveEarlyLinuxElectronOptions(
+ ): EarlyLinuxElectronOptions {
+   const preference = resolveEarlyLinuxPasswordStorePreference(input);
+   const isDevelopment = isDevelopmentEnvironment(input.env);
++  const isForkHubBuild = !isDevelopment && isForkHubDerivedVersion(input.appVersion);
+   return {
+     isDevelopment,
+-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
++    linuxWmClass: isDevelopment ? "t3code-dev" : isForkHubBuild ? "t3code-forkhub" : "t3code",
++    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment, isForkHubBuild),
+     passwordStore: resolveLinuxPasswordStoreSwitch({
+       preference,
+       env: input.env,
+diff --git a/apps/desktop/src/app/DesktopEnvironment.test.ts b/apps/desktop/src/app/DesktopEnvironment.test.ts
+index 2a2038fb4c..bfad677282 100644
+--- a/apps/desktop/src/app/DesktopEnvironment.test.ts
++++ b/apps/desktop/src/app/DesktopEnvironment.test.ts
+@@ -155,6 +155,35 @@ describe("DesktopEnvironment", () => {
+     }),
+   );
+ 
++  it.effect("isolates ForkHub installs so stock and ForkHub run side by side", () =>
++    Effect.gen(function* () {
++      const stock = yield* makeEnvironment({ isPackaged: true });
++      const forkhub = yield* makeEnvironment({
++        isPackaged: true,
++        appVersion: "0.0.43-nightly.20260924.2187.fh.imbios.1",
++      });
++
++      assert.equal(stock.baseDir, "/Users/alice/.t3");
++      assert.equal(stock.stateDir, "/Users/alice/.t3/userdata");
++      assert.equal(stock.userDataDirName, "t3code");
++      assert.equal(stock.linuxWmClass, "t3code");
++      assert.equal(stock.appUserModelId, "com.t3tools.t3code");
++      assert.equal(stock.linuxDesktopEntryName, "com.t3tools.T3Code.desktop");
++
++      assert.equal(forkhub.baseDir, "/Users/alice/.t3-forkhub");
++      assert.equal(forkhub.stateDir, "/Users/alice/.t3-forkhub/userdata");
++      assert.equal(
++        forkhub.desktopSettingsPath,
++        "/Users/alice/.t3-forkhub/userdata/desktop-settings.json",
++      );
++      assert.equal(forkhub.userDataDirName, "t3code-forkhub");
++      assert.equal(forkhub.legacyUserDataDirName, "T3 Code x ForkHub");
++      assert.equal(forkhub.linuxWmClass, "t3code-forkhub");
++      assert.equal(forkhub.appUserModelId, "com.t3tools.t3code.forkhub");
++      assert.equal(forkhub.linuxDesktopEntryName, "com.t3tools.T3Code.ForkHub.desktop");
++    }),
++  );
++
+   it.effect("keeps implicit development state separate from production state", () =>
+     Effect.gen(function* () {
+       const development = yield* makeEnvironment(
+diff --git a/apps/desktop/src/app/DesktopEnvironment.ts b/apps/desktop/src/app/DesktopEnvironment.ts
+index 8622e8efa6..640797d72c 100644
+--- a/apps/desktop/src/app/DesktopEnvironment.ts
++++ b/apps/desktop/src/app/DesktopEnvironment.ts
+@@ -176,10 +176,12 @@ const make = Effect.fn("desktop.environment.make")(function* (
+       : input.platform === "darwin"
+         ? path.join(homeDirectory, "Library", "Application Support")
+         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
++  const isForkHubBuild = !isDevelopment && isForkHubDerivedVersion(input.appVersion);
+   const baseDir = resolveDesktopBaseDir({
+     homeDirectory,
+     joinPath: path.join,
+     t3Home: config.t3Home,
++    isForkHubBuild,
+   });
+   const rootDir = path.resolve(input.dirname, "../../..");
+   const appRoot = input.isPackaged ? input.appPath : rootDir;
+@@ -198,8 +200,21 @@ const make = Effect.fn("desktop.environment.make")(function* (
+     joinPath: path.join,
+     t3Home: config.t3Home,
+   });
+-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
+-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
++  // A ForkHub install gets its own Electron profile, window class, and OS app
++  // identity so it can run at the same time as a stock install: Chromium's
++  // single-instance lock is per user-data dir, and the taskbar/dock groups by
++  // app id / window class. The legacy dir is intentionally a name no previous
++  // build ever used, so ForkHub never adopts the shared stock profile.
++  const userDataDirName = isDevelopment
++    ? "t3code-dev"
++    : isForkHubBuild
++      ? "t3code-forkhub"
++      : "t3code";
++  const legacyUserDataDirName = isDevelopment
++    ? "T3 Code (Dev)"
++    : isForkHubBuild
++      ? FORKHUB_APP_DISPLAY_NAME
++      : "T3 Code (Alpha)";
+   const linuxApplicationsDir = path.join(
+     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
+     "applications",
+@@ -249,10 +264,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
+     branding,
+     displayName,
+     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
+-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
++      isDevelopment
++        ? "com.t3tools.t3code.dev"
++        : isForkHubBuild
++          ? "com.t3tools.t3code.forkhub"
++          : "com.t3tools.t3code",
+     ),
+-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
++    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment, isForkHubBuild),
++    linuxWmClass: isDevelopment ? "t3code-dev" : isForkHubBuild ? "t3code-forkhub" : "t3code",
+     linuxApplicationsDir,
+     appImagePath: config.appImagePath,
+     userDataDirName,
+diff --git a/apps/desktop/src/app/DesktopPreReadyPlatform.ts b/apps/desktop/src/app/DesktopPreReadyPlatform.ts
+index c07334f33b..fac6c22ca3 100644
+--- a/apps/desktop/src/app/DesktopPreReadyPlatform.ts
++++ b/apps/desktop/src/app/DesktopPreReadyPlatform.ts
+@@ -38,6 +38,7 @@ export const resolveEarlyLinuxElectronOptionsFromProcess =
+       homeDirectory: NodeOS.homedir(),
+       joinPath: NodePath.posix.join,
+       readFileString: (path) => NodeFS.readFileSync(path, "utf8"),
++      appVersion: Electron.app.getVersion(),
+     });
+ 
+ export class DesktopPreReadyElectronOptions extends Context.Service<
+diff --git a/apps/desktop/src/app/DesktopStatePaths.ts b/apps/desktop/src/app/DesktopStatePaths.ts
+index 006dd97092..b24fbab6e7 100644
+--- a/apps/desktop/src/app/DesktopStatePaths.ts
++++ b/apps/desktop/src/app/DesktopStatePaths.ts
+@@ -14,9 +14,13 @@ export function resolveDesktopBaseDir(input: {
+   readonly homeDirectory: string;
+   readonly joinPath: JoinPath;
+   readonly t3Home: Option.Option<string>;
++  // ForkHub builds keep their own backend home so a stock install and any
++  // ForkHub install can run side by side without sharing SQLite/service state.
++  // An explicit T3CODE_HOME still wins for both, deliberately.
++  readonly isForkHubBuild: boolean;
+ }): string {
+   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
+-    input.joinPath(input.homeDirectory, ".t3"),
++    input.joinPath(input.homeDirectory, input.isForkHubBuild ? ".t3-forkhub" : ".t3"),
+   );
+ }
+ 
+diff --git a/apps/desktop/src/settings/DesktopAppSettings.test.ts b/apps/desktop/src/settings/DesktopAppSettings.test.ts
+index d40a94468b..e69777d070 100644
+--- a/apps/desktop/src/settings/DesktopAppSettings.test.ts
++++ b/apps/desktop/src/settings/DesktopAppSettings.test.ts
+@@ -246,6 +246,42 @@ describe("DesktopSettings", () => {
+     ),
+   );
+ 
++  it.effect("quarantines malformed settings for ForkHub builds instead of dropping them", () =>
++    withSettings(
++      Effect.gen(function* () {
++        const environment = yield* DesktopEnvironment.DesktopEnvironment;
++        const fileSystem = yield* FileSystem.FileSystem;
++        const settings = yield* DesktopAppSettings.DesktopAppSettings;
++        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
++        yield* fileSystem.writeFileString(environment.desktopSettingsPath, "{not-json");
++
++        assert.deepEqual(yield* settings.load, {
++          ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
++          updateChannel: "nightly",
++        });
++        const backupPath = `${environment.desktopSettingsPath}.corrupt.bak`;
++        assert.isTrue(yield* fileSystem.exists(backupPath));
++        assert.equal(yield* fileSystem.readFileString(backupPath), "{not-json");
++      }),
++      { appVersion: "0.0.43-nightly.20260924.2187.fh.imbios.1" },
++    ),
++  );
++
++  it.effect("leaves no quarantine backup for stock builds with malformed settings", () =>
++    withSettings(
++      Effect.gen(function* () {
++        const environment = yield* DesktopEnvironment.DesktopEnvironment;
++        const fileSystem = yield* FileSystem.FileSystem;
++        const settings = yield* DesktopAppSettings.DesktopAppSettings;
++        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
++        yield* fileSystem.writeFileString(environment.desktopSettingsPath, "{not-json");
++
++        assert.deepEqual(yield* settings.load, DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
++        assert.isFalse(yield* fileSystem.exists(`${environment.desktopSettingsPath}.corrupt.bak`));
++      }),
++    ),
++  );
++
+   it.effect("loads lenient persisted desktop settings JSON", () =>
+     withSettings(
+       Effect.gen(function* () {
+diff --git a/apps/desktop/src/settings/DesktopAppSettings.ts b/apps/desktop/src/settings/DesktopAppSettings.ts
+index 546bb1803c..06205ffd5e 100644
+--- a/apps/desktop/src/settings/DesktopAppSettings.ts
++++ b/apps/desktop/src/settings/DesktopAppSettings.ts
+@@ -24,6 +24,7 @@ import {
+   type LinuxPasswordStorePreference,
+ } from "../linuxSecretStorage.ts";
+ import {
++  isForkHubDerivedVersion,
+   normalizeForkHubOwner,
+   resolveDefaultDesktopUpdateChannel,
+ } from "../updates/updateChannels.ts";
+@@ -442,13 +443,41 @@ function readSettings(
+         onSome: (raw) =>
+           decodeDesktopSettingsJson(raw).pipe(
+             Effect.map((parsed) => normalizeDesktopSettingsDocument(parsed, appVersion)),
+-            Effect.orElseSucceed(() => defaultSettings),
++            Effect.catch((cause) =>
++              isForkHubDerivedVersion(appVersion)
++                ? quarantineCorruptSettings(fileSystem, settingsPath, raw, cause).pipe(
++                    Effect.as(defaultSettings),
++                  )
++                : Effect.succeed(defaultSettings),
++            ),
+           ),
+       }),
+     ),
+   );
+ }
+ 
++// A ForkHub install shares version lineage with stock but runs its own home,
++// so a settings file it cannot decode (foreign schema, truncated write from a
++// concurrent older build) is quarantined to a sidecar instead of being
++// silently dropped: the evidence stays on disk and startup continues on
++// defaults. Stock keeps its historical silent-defaults behavior.
++function quarantineCorruptSettings(
++  fileSystem: FileSystem.FileSystem,
++  settingsPath: string,
++  raw: string,
++  cause: unknown,
++): Effect.Effect<void> {
++  const backupPath = `${settingsPath}.corrupt.bak`;
++  return Effect.logWarning("ForkHub quarantined an unreadable desktop-settings.json", {
++    settingsPath,
++    backupPath,
++    cause: String(cause),
++  }).pipe(
++    Effect.andThen(fileSystem.writeFileString(backupPath, raw)),
++    Effect.ignore,
++  );
++}
++
+ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (input: {
+   readonly fileSystem: FileSystem.FileSystem;
+   readonly path: Path.Path;

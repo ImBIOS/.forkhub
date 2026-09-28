@@ -18,6 +18,9 @@ User-explicit choice (recorded 2026-09-24, ImBIOS; night train confirmed later s
 To change the poll cadence, edit the cron in
 `.github/workflows/forkhub-build.yml` (shared file — affects all targets).
 
-Drift (apply step fails on a new tag) does NOT auto-trigger anything:
-dispatch `forkhub reimplement` by hand — see `build/reimplement.md`
-for the unattended OpenCode flow and the human-decision protocol.
+Drift (apply or verify fails on a new tag) auto-dispatches ONE
+`forkhub reimplement` run for that target+patch+tag, then fails the
+build so the fresh realization rebuilds on promote. While a
+`needs-human-decision` issue is open for the patch, no new runs
+dispatch (no daily agent spend while a human decision is pending).
+See `build/reimplement.md` for the flow and the human-decision protocol.

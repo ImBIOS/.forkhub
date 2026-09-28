@@ -4,9 +4,9 @@ Patched T3 Code that updates from a ForkHub channel instead of upstream.
 This channel follows upstream nightly: expect a fresh build most days.
 
 Headless CLI as `t3` without touching npmjs: this release also
-attaches `imbios-fh-t3-<version>.tgz` (an installable npm tarball,
-package `@imbios/fh-t3`, bin `t3`, same tree as the `t3-*-linux-x64`
-archive — or skip URLs entirely with `fh run t3 ImBIOS`). Run it
+attaches `with-fh-fh-t3-<version>.tgz` (an installable npm tarball,
+package `@with-fh/fh-t3`, bin `t3`, same tree as the `t3-*-linux-x64`
+archive — or skip URLs entirely with `fh run t3 with-fh`). Run it
 straight from this page:
 
 ```bash

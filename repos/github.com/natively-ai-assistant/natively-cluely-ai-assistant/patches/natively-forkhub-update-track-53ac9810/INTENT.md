@@ -5,7 +5,7 @@ target_repo: github.com/natively-ai-assistant/natively-cluely-ai-assistant
 target_area: [electron/update/updateFeed.ts, electron/update/ReleaseNotesManager.ts, electron/main.ts, electron/ipcHandlers.ts, electron/preload.ts, electron/services/HardwareId.ts, src/components/UpdateBanner.tsx, src/components/onboarding/OrchestratedToasterHost.tsx, src/types/electron.d.ts, package.json]
 status: draft
 applied_upstream_pr: none
-version: 3
+version: 4
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -101,6 +101,13 @@ placeholder.
   case-insensitively, and `build.sh` stamps versions from tags with
   `s/^[vV]//` — a capital V inside the version would break semver
   parsing in electron-updater's atom matcher and the in-app gates.
+- Open-source build fix: V2.8.8's `resolveCompanySearchProvider.ts` uses
+  bare-branch premium `require()`s, which esbuild must resolve at bundle
+  time and which fail without the submodule — breaking `build:electron`
+  (and hence every CI build) for submodule-less checkouts. Wrapped both
+  branches in try/catch (the `featureGate.ts` pattern esbuild spares),
+  falling through the Tavily → Natively → null cascade with a warning.
+  With premium present behavior is byte-identical.
 - New `electron/update/updateFeed.ts`: feed constants, `getUpdateFeed()`,
   `extractVersionFromTag()` (handles `<slug>--vX-fhN` catalog tags),
   `isForkCounterUpgrade()` (same-owner rebuild ordering), URL builders;

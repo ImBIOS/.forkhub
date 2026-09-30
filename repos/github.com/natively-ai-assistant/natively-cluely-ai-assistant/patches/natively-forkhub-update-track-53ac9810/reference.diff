@@ -419,6 +419,58 @@ index 0000000..893bb87
 +  const second = getStableHardwareId();
 +  assert.equal(second, first, 'must be stable across calls in one process');
 +});
+diff --git a/electron/services/resolveCompanySearchProvider.ts b/electron/services/resolveCompanySearchProvider.ts
+index 845deec..bf3a5e4 100644
+--- a/electron/services/resolveCompanySearchProvider.ts
++++ b/electron/services/resolveCompanySearchProvider.ts
+@@ -15,22 +15,35 @@ export function resolveCompanySearchProvider(): SearchProvider | null {
+ 
+   const tavilyApiKey = cm.getTavilyApiKey();
+   if (tavilyApiKey) {
+-    const {
+-      TavilySearchProvider,
+-    } = require('../../premium/electron/knowledge/TavilySearchProvider');
+-    return new TavilySearchProvider(tavilyApiKey);
++    // Wrapped in try/catch (not just a branch) for two reasons: open-source
++    // / fork builds ship without premium/, in which case fall through to
++    // the Natively proxy cascade instead of crashing the caller — and
++    // esbuild leaves try-wrapped requires unbundeled, so `build:electron`
++    // succeeds without the submodule (see featureGate.ts).
++    try {
++      const {
++        TavilySearchProvider,
++      } = require('../../premium/electron/knowledge/TavilySearchProvider');
++      return new TavilySearchProvider(tavilyApiKey);
++    } catch {
++      console.warn('[CompanySearch] Tavily provider unavailable (premium module missing); falling through');
++    }
+   }
+ 
+   const nativelyKey = cm.getNativelyApiKey();
+   if (nativelyKey) {
+-    const {
+-      NativelySearchProvider,
+-    } = require('../../premium/electron/knowledge/NativelySearchProvider');
+-    // Pass the real trial token when the key is the __trial__ sentinel so the
+-    // server can authenticate via x-trial-token instead of the invalid key.
+-    const trialToken = nativelyKey === TRIAL_SENTINEL_KEY ? cm.getTrialToken() : undefined;
+-    console.log('[CompanySearch] Using Natively API search (no Tavily key configured)');
+-    return new NativelySearchProvider(nativelyKey, trialToken ?? undefined);
++    try {
++      const {
++        NativelySearchProvider,
++      } = require('../../premium/electron/knowledge/NativelySearchProvider');
++      // Pass the real trial token when the key is the __trial__ sentinel so the
++      // server can authenticate via x-trial-token instead of the invalid key.
++      const trialToken = nativelyKey === TRIAL_SENTINEL_KEY ? cm.getTrialToken() : undefined;
++      console.log('[CompanySearch] Using Natively API search (no Tavily key configured)');
++      return new NativelySearchProvider(nativelyKey, trialToken ?? undefined);
++    } catch {
++      console.warn('[CompanySearch] Natively search provider unavailable (premium module missing)');
++    }
+   }
+ 
+   return null;
 diff --git a/electron/update/ReleaseNotesManager.test.mjs b/electron/update/ReleaseNotesManager.test.mjs
 index c4d358d..daa9c4a 100644
 --- a/electron/update/ReleaseNotesManager.test.mjs

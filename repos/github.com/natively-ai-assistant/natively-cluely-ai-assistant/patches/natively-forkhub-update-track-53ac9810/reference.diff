@@ -1,3 +1,29 @@
+diff --git a/electron/IntelligenceEngine.ts b/electron/IntelligenceEngine.ts
+index d2ae2a2..88a024b 100644
+--- a/electron/IntelligenceEngine.ts
++++ b/electron/IntelligenceEngine.ts
+@@ -62,7 +62,20 @@ import { recordAttribution } from './intelligence/IntelligenceAttribution';
+ // tsc collapsed the grounding result to `{}`. Naming it restores genuine checking on
+ // the seven property reads below instead of masking them with a cast.
+ // Follow-up: type getKnowledgeOrchestrator() properly and drop this import.
+-import type { PromptAssemblyResult } from '../premium/electron/knowledge/ContextAssembler';
++// FORKHUB-OSS: the premium import below only resolves with the private
++// premium/ submodule checked out, which open-source / fork builds omit.
++// The same shape is named locally so `tsc` passes without it — every
++// property read below stays name-checked; only the declaration site
++// differs. (Keep in sync with premium/.../ContextAssembler.ts if it gains
++// fields. `tsc` + `build:electron` both pass with this in place.)
++// import type { PromptAssemblyResult } from '../premium/electron/knowledge/ContextAssembler';
++type PromptAssemblyResult = {
++  factualRecall?: boolean;
++  liveNegotiationResponse?: unknown;
++  contextBlock?: string;
++  isIntroQuestion?: boolean;
++  introResponse?: string;
++};
+ 
+ // Mode types
+ export type IntelligenceMode = 'idle' | 'assist' | 'what_to_say' | 'follow_up' | 'recap' | 'clarify' | 'manual' | 'follow_up_questions' | 'code_hint' | 'brainstorm';
 diff --git a/electron/ipcHandlers.ts b/electron/ipcHandlers.ts
 index 045bcce..33b07d7 100644
 --- a/electron/ipcHandlers.ts
@@ -420,10 +446,24 @@ index 0000000..893bb87
 +  assert.equal(second, first, 'must be stable across calls in one process');
 +});
 diff --git a/electron/services/resolveCompanySearchProvider.ts b/electron/services/resolveCompanySearchProvider.ts
-index 845deec..bf3a5e4 100644
+index 845deec..2e6d9c9 100644
 --- a/electron/services/resolveCompanySearchProvider.ts
 +++ b/electron/services/resolveCompanySearchProvider.ts
-@@ -15,22 +15,35 @@ export function resolveCompanySearchProvider(): SearchProvider | null {
+@@ -8,29 +8,48 @@
+ 
+ import { TRIAL_SENTINEL_KEY } from '../config/constants';
+ import { CredentialsManager } from './CredentialsManager';
+-import type { SearchProvider } from '../../premium/electron/knowledge/CompanyResearchEngine';
++// FORKHUB-OSS: the premium import below only resolves with the private
++// premium/ submodule checked out. Open-source / fork builds name an opaque
++// local alias instead — the value flows straight into `any`-typed premium
++// APIs at the call sites, so no checking is lost. (`tsc` + `build:electron`
++// both pass with this in place.)
++// import type { SearchProvider } from '../../premium/electron/knowledge/CompanyResearchEngine';
++type SearchProvider = any;
+ 
+ export function resolveCompanySearchProvider(): SearchProvider | null {
+   const cm = CredentialsManager.getInstance();
  
    const tavilyApiKey = cm.getTavilyApiKey();
    if (tavilyApiKey) {

@@ -5,7 +5,7 @@ target_repo: github.com/natively-ai-assistant/natively-cluely-ai-assistant
 target_area: [electron/update/updateFeed.ts, electron/update/ReleaseNotesManager.ts, electron/main.ts, electron/ipcHandlers.ts, electron/preload.ts, electron/services/HardwareId.ts, src/components/UpdateBanner.tsx, src/components/onboarding/OrchestratedToasterHost.tsx, src/types/electron.d.ts, package.json]
 status: draft
 applied_upstream_pr: none
-version: 4
+version: 5
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -108,6 +108,14 @@ placeholder.
   branches in try/catch (the `featureGate.ts` pattern esbuild spares),
   falling through the Tavily → Natively → null cascade with a warning.
   With premium present behavior is byte-identical.
+- Open-source typecheck fix: two type-only premium imports new in V2.8.8
+  (`PromptAssemblyResult` in `IntelligenceEngine.ts`,
+  `SearchProvider` in `resolveCompanySearchProvider.ts`) fail `tsc`
+  without the submodule. Named locally instead — the five observed
+  property reads stay name-checked via an optional-field structural
+  type; the provider alias is opaque where the value only flows into
+  `any`-typed premium APIs. (Keep in sync if the premium types gain
+  fields.)
 - New `electron/update/updateFeed.ts`: feed constants, `getUpdateFeed()`,
   `extractVersionFromTag()` (handles `<slug>--vX-fhN` catalog tags),
   `isForkCounterUpgrade()` (same-owner rebuild ordering), URL builders;

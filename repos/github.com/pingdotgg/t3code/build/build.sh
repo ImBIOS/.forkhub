@@ -105,7 +105,7 @@ fi
 if command -v apt-get >/dev/null 2>&1; then
   say "installing native build prerequisites"
   sudo apt-get update >>"$LOG" 2>&1 || say "apt-get update failed; continuing"
-  sudo apt-get install -y libsecret-1-dev pkg-config build-essential imagemagick librsvg2-bin >>"$LOG" 2>&1 \
+  sudo apt-get install -y libsecret-1-dev pkg-config build-essential imagemagick >>"$LOG" 2>&1 \
     || say "prerequisite install failed; the artifact build will say if it mattered"
 fi
 
@@ -122,12 +122,6 @@ command -v vp >/dev/null 2>&1 || fail_soft "vp not found after install"
 # without this, a nightly build reports the last stable version everywhere.
 node scripts/update-release-package-versions.ts "$FH_VERSION" >>"$LOG" 2>&1 \
   || fail_soft "package version stamping failed"
-
-# ForkHub icon rasters from the in-repo logo SVG (binaries are build
-# artifacts, never repo content). Missing rasters fail the artifact build
-# with a pointer to the generator, so this runs unconditionally here.
-sh scripts/generate-forkhub-icons.sh >>"$LOG" 2>&1 \
-  || fail_soft "ForkHub icon rasterization failed"
 
 export T3CODE_FORKHUB_BUILD=1
 export T3CODE_DESKTOP_UPDATE_REPOSITORY="$REPO"

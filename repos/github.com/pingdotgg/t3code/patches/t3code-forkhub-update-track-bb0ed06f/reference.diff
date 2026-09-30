@@ -3048,7 +3048,7 @@ index 9745662c..fc6f294b 100644
      const diskFailure = new Error("disk exploded");
      const settingsFailure = new DesktopAppSettings.DesktopSettingsWriteError({
 diff --git a/apps/desktop/src/updates/DesktopUpdates.ts b/apps/desktop/src/updates/DesktopUpdates.ts
-index 245925a6..207facc2 100644
+index 245925a6..58097b96 100644
 --- a/apps/desktop/src/updates/DesktopUpdates.ts
 +++ b/apps/desktop/src/updates/DesktopUpdates.ts
 @@ -1,6 +1,7 @@
@@ -3059,7 +3059,7 @@ index 245925a6..207facc2 100644
    type DesktopRuntimeInfo,
    type DesktopUpdateActionResult,
    type DesktopUpdateChannel,
-@@ -33,7 +34,17 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
+@@ -33,7 +34,18 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
  import * as IpcChannels from "../ipc/channels.ts";
  import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
  import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
@@ -3070,6 +3070,7 @@ index 245925a6..207facc2 100644
 +  isVersionAllowedOnUpdateChannel,
 +  normalizeForkHubOwner,
 +  resolveCatalogTrains,
++  resolveSupportedTrains,
 +  resolveForkHubFeedConfig,
 +  resolveMigratedUpdateTrack,
 +  resolveTrainsFromUpstreamManifest,
@@ -3078,7 +3079,7 @@ index 245925a6..207facc2 100644
  import {
    createInitialDesktopUpdateState,
    reduceDesktopUpdateStateOnCheckFailure,
-@@ -181,6 +192,12 @@ export class DesktopUpdates extends Context.Service<
+@@ -181,6 +193,12 @@ export class DesktopUpdates extends Context.Service<
      readonly setChannel: (
        channel: DesktopUpdateChannel,
      ) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
@@ -3091,7 +3092,7 @@ index 245925a6..207facc2 100644
      readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
      readonly download: Effect.Effect<DesktopUpdateActionResult>;
      readonly install: Effect.Effect<DesktopUpdateActionResult>;
-@@ -215,9 +232,21 @@ function createBaseUpdateState(
+@@ -215,9 +233,21 @@ function createBaseUpdateState(
    channel: DesktopUpdateChannel,
    enabled: boolean,
    environment: DesktopEnvironment.DesktopEnvironment["Service"],
@@ -3114,7 +3115,7 @@ index 245925a6..207facc2 100644
      enabled,
      status: enabled ? "idle" : "disabled",
    };
-@@ -227,6 +256,78 @@ function getCanRetryFromState(state: DesktopUpdateState): boolean {
+@@ -227,6 +257,97 @@ function getCanRetryFromState(state: DesktopUpdateState): boolean {
    return state.availableVersion !== null || state.downloadedVersion !== null;
  }
  
@@ -3127,11 +3128,31 @@ index 245925a6..207facc2 100644
 +  return Effect.gen(function* () {
 +    // Authoritative first: the catalog manifest declares per-target trains
 +    // (`trains: ["nightly"]`), so other targets' releases in the same repo
-+    // can never leak a phantom train into this app's track list.
++    // can never leak a phantom train into this app's track list. The
++    // manifest is then verified against this target's shipped bundle
++    // releases, so a declared-but-unbuilt train is never offered.
 +    const manifestTrains = yield* fetchTrainsFromUpstreamManifest(owner, repo).pipe(
 +      Effect.option,
 +    );
-+    if (Option.isSome(manifestTrains)) return manifestTrains.value;
++    const rows = yield* fetchCatalogReleaseRows(owner, repo).pipe(Effect.option);
++    if (Option.isSome(manifestTrains)) {
++      return resolveSupportedTrains(
++        manifestTrains.value,
++        Option.getOrElse(rows, () => null),
++      );
++    }
++    if (Option.isNone(rows)) {
++      return yield* Effect.fail(new Error(`Could not check ${owner}/${repo} releases.`));
++    }
++    return resolveCatalogTrains(rows.value);
++  }).pipe(Effect.timeout("15 seconds"));
++}
++
++function fetchCatalogReleaseRows(
++  owner: string,
++  repo: DesktopForkHubRepo,
++): Effect.Effect<unknown, Error> {
++  return Effect.gen(function* () {
 +    const response = yield* Effect.tryPromise({
 +      try: () =>
 +        fetch(
@@ -3148,12 +3169,11 @@ index 245925a6..207facc2 100644
 +        new Error(`Could not check ${owner}/${repo} (HTTP ${response.status}).`),
 +      );
 +    }
-+    const rows = yield* Effect.tryPromise({
++    return yield* Effect.tryPromise({
 +      try: () => response.json() as Promise<unknown>,
 +      catch: (cause) => new Error(`Could not parse ${owner}/${repo} releases.`, { cause }),
 +    });
-+    return resolveCatalogTrains(rows);
-+  }).pipe(Effect.timeout("15 seconds"));
++  });
 +}
 +
 +function fetchTrainsFromUpstreamManifest(
@@ -3193,7 +3213,7 @@ index 245925a6..207facc2 100644
  function shouldBroadcastDownloadProgress(
    currentState: DesktopUpdateState,
    nextPercent: number,
-@@ -294,6 +395,10 @@ export const make = Effect.gen(function* () {
+@@ -294,6 +415,10 @@ export const make = Effect.gen(function* () {
        environment.appVersion,
        environment.runtimeInfo,
        environment.defaultDesktopSettings.updateChannel,
@@ -3204,7 +3224,7 @@ index 245925a6..207facc2 100644
      ),
    );
  
-@@ -351,17 +456,17 @@ export const make = Effect.gen(function* () {
+@@ -351,17 +476,17 @@ export const make = Effect.gen(function* () {
  
    const resolveDisabledReason = Effect.gen(function* () {
      const hasFeedConfig = yield* hasUpdateFeedConfig;
@@ -3233,7 +3253,7 @@ index 245925a6..207facc2 100644
    });
  
    const activeUpdateAction = Ref.get(activeUpdateActionRef);
-@@ -389,8 +494,38 @@ export const make = Effect.gen(function* () {
+@@ -389,8 +514,38 @@ export const make = Effect.gen(function* () {
  
    const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
      channel: DesktopUpdateChannel,
@@ -3272,7 +3292,7 @@ index 245925a6..207facc2 100644
      const allowsPrerelease = channel === "nightly";
      yield* electronUpdater.setChannel(channel);
      yield* electronUpdater.setAllowPrerelease(allowsPrerelease);
-@@ -406,6 +541,52 @@ export const make = Effect.gen(function* () {
+@@ -406,6 +561,52 @@ export const make = Effect.gen(function* () {
  
    const shouldEnableAutoUpdates = resolveDisabledReason.pipe(Effect.map(Option.isNone));
  
@@ -3325,7 +3345,7 @@ index 245925a6..207facc2 100644
    const checkForUpdates = Effect.fn("desktop.updates.checkForUpdates")(function* (
      reason: string,
      actionReservation: "acquire" | "held" = "acquire",
-@@ -741,7 +922,13 @@ export const make = Effect.gen(function* () {
+@@ -741,7 +942,13 @@ export const make = Effect.gen(function* () {
        Effect.flatMap(
          Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
            const state = yield* Ref.get(updateStateRef);
@@ -3340,7 +3360,7 @@ index 245925a6..207facc2 100644
              yield* logUpdaterInfo("ignoring update that does not match selected channel", {
                version: info.version,
                channel: state.channel,
-@@ -757,6 +944,7 @@ export const make = Effect.gen(function* () {
+@@ -757,6 +964,7 @@ export const make = Effect.gen(function* () {
              info.releaseNotes,
              info.version,
              state.channel,
@@ -3348,7 +3368,7 @@ index 245925a6..207facc2 100644
            );
            yield* setState(
              reduceDesktopUpdateStateOnUpdateAvailable(
-@@ -924,7 +1112,16 @@ export const make = Effect.gen(function* () {
+@@ -924,7 +1132,16 @@ export const make = Effect.gen(function* () {
  
        const settings = yield* desktopSettings.get;
        const enabled = yield* shouldEnableAutoUpdates;
@@ -3366,7 +3386,7 @@ index 245925a6..207facc2 100644
        if (!enabled) {
          return;
        }
-@@ -932,7 +1129,10 @@ export const make = Effect.gen(function* () {
+@@ -932,7 +1149,10 @@ export const make = Effect.gen(function* () {
  
        yield* electronUpdater.setAutoDownload(false);
        yield* electronUpdater.setAutoInstallOnAppQuit(false);
@@ -3378,7 +3398,7 @@ index 245925a6..207facc2 100644
        yield* electronUpdater.setDisableDifferentialDownload(
          isArm64HostRunningIntelBuild(environment.runtimeInfo),
        );
-@@ -994,14 +1194,25 @@ export const make = Effect.gen(function* () {
+@@ -994,14 +1214,25 @@ export const make = Effect.gen(function* () {
              ),
            );
  
@@ -3406,7 +3426,7 @@ index 245925a6..207facc2 100644
          const allowDowngrade = yield* electronUpdater.allowDowngrade;
          yield* electronUpdater.setAllowDowngrade(true);
          yield* checkForUpdates("channel-change", "held").pipe(
-@@ -1010,6 +1221,89 @@ export const make = Effect.gen(function* () {
+@@ -1010,6 +1241,89 @@ export const make = Effect.gen(function* () {
          return yield* Ref.get(updateStateRef);
        }).pipe(Effect.ensuring(finishUpdateAction("channel")));
      }),
@@ -3675,10 +3695,10 @@ index 7fd50a82..380f1bff 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
-index acf4155f..0e7a5447 100644
+index acf4155f..439b38b4 100644
 --- a/apps/desktop/src/updates/updateChannels.test.ts
 +++ b/apps/desktop/src/updates/updateChannels.test.ts
-@@ -1,6 +1,18 @@
+@@ -1,6 +1,20 @@
  import { describe, expect, it } from "vite-plus/test";
  
 -import { isNightlyDesktopVersion, resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
@@ -3689,6 +3709,8 @@ index acf4155f..0e7a5447 100644
 +  normalizeForkHubOwner,
 +  resolveCatalogTrains,
 +  resolveForkHubVersionOwner,
++  resolveReleasedTrains,
++  resolveSupportedTrains,
 +  resolveTrainsFromUpstreamManifest,
 +  resolveDefaultDesktopUpdateChannel,
 +  resolveForkHubFeedConfig,
@@ -3698,7 +3720,7 @@ index acf4155f..0e7a5447 100644
  
  describe("updateChannels", () => {
    it("keeps preview builds branded as nightly but on the latest update channel", () => {
-@@ -12,5 +24,176 @@ describe("updateChannels", () => {
+@@ -12,5 +26,215 @@ describe("updateChannels", () => {
    it("only matches the first prerelease identifier", () => {
      expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
      expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
@@ -3818,8 +3840,47 @@ index acf4155f..0e7a5447 100644
 +    ]);
 +  });
 +
-+  it("migrates the track when the publisher drops it", () => {
++  it("verifies declared trains against this target's bundle releases", () => {
++    const slug = "pingdotgg-t3code";
 +    expect(
++      resolveReleasedTrains(
++        [
++          { tag_name: "pingdotgg-t3code--v0.0.45-nightly.20260930.2468-fh1" },
++          { tag_name: "pingdotgg-t3code--v0.0.44-fh2" },
++          { tag_name: "natively-ai-assistant-natively-cluely-ai-assistant--V2.8.8-fh16" },
++          { tag_name: "v2.8.8-fh.with-fh.3" },
++          { tag_name: "v0.0.45-nightly.20260930.2468.fh.with-fh.1" },
++        ],
++        slug,
++      ),
++    ).toEqual({ hasStableTrain: true, hasNightlyTrain: true, hasBundleEvidence: true });
++    expect(
++      resolveReleasedTrains(
++        [{ tag_name: "pingdotgg-t3code--v0.0.45-nightly.20260930.2468-fh1" }],
++        slug,
++      ),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: true, hasBundleEvidence: true });
++    // Updater tags name no target; drafts do not count; nothing usable at all.
++    expect(
++      resolveReleasedTrains([{ tag_name: "v0.0.45-nightly.20260930.2468.fh.with-fh.1" }], slug),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: false, hasBundleEvidence: false });
++    expect(resolveReleasedTrains("nope", slug).hasBundleEvidence).toBe(false);
++  });
++
++  it("offers only declared trains with shipped builds behind them", () => {
++    const nightlyOnlyBundles = [{ tag_name: "pingdotgg-t3code--v0.0.45-nightly.20260930.2468-fh1" }];
++    expect(
++      resolveSupportedTrains({ hasStableTrain: true, hasNightlyTrain: true }, nightlyOnlyBundles),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: true });
++    expect(
++      resolveSupportedTrains({ hasStableTrain: false, hasNightlyTrain: true }, nightlyOnlyBundles),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: true });
++    const declared = { hasStableTrain: true, hasNightlyTrain: true };
++    expect(resolveSupportedTrains(declared, [{ tag_name: "v1.0.0" }])).toEqual(declared);
++    expect(resolveSupportedTrains(declared, null)).toEqual(declared);
++  });
++
++  it("migrates the track when the publisher drops it", () => {    expect(
 +      resolveMigratedUpdateTrack("latest", { hasStableTrain: true, hasNightlyTrain: true }),
 +    ).toBe("latest");
 +    expect(
@@ -3876,10 +3937,10 @@ index acf4155f..0e7a5447 100644
    });
  });
 diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
-index e7f9a2f8..75fda129 100644
+index e7f9a2f8..fead4659 100644
 --- a/apps/desktop/src/updates/updateChannels.ts
 +++ b/apps/desktop/src/updates/updateChannels.ts
-@@ -1,18 +1,180 @@
+@@ -1,18 +1,237 @@
 -import type { DesktopUpdateChannel } from "@t3tools/contracts";
 +import type { DesktopForkHubRepo, DesktopUpdateChannel } from "@t3tools/contracts";
 +import { DEFAULT_FORKHUB_PUBLISHER } from "@t3tools/contracts";
@@ -4019,6 +4080,63 @@ index e7f9a2f8..75fda129 100644
 +  if (typeof row !== "object" || row === null) return false;
 +  const candidate = row as CatalogReleaseRow;
 +  return candidate.draft !== true && typeof candidate.tag_name === "string";
++}
++
++// Target slug matching the shared builder's namespaced bundle tags:
++// `github.com/pingdotgg/t3code` builds ship as
++// `pingdotgg-t3code--v<upstream-tag>-fh<n>`. Bundle tags (unlike updater
++// tags) name their target, so they attribute releases to the right app in
++// a shared catalog.
++export const FORKHUB_T3CODE_TARGET_SLUG = "pingdotgg-t3code";
++
++export interface ForkHubReleasedTrains {
++  readonly hasStableTrain: boolean;
++  readonly hasNightlyTrain: boolean;
++  /** False when no bundle tag names this target — nothing to verify against. */
++  readonly hasBundleEvidence: boolean;
++}
++
++// Trains with actual releases behind them, read from this target's bundle
++// tags only. Updater tags (`v…​.fh.<owner>.<n>`) carry no target, so they
++// stay out: another target's stable build must never count for this app.
++export function resolveReleasedTrains(rows: unknown, targetSlug: string): ForkHubReleasedTrains {
++  const prefix = `${targetSlug.toLowerCase()}--v`;
++  let hasStableTrain = false;
++  let hasNightlyTrain = false;
++  let hasBundleEvidence = false;
++  if (!Array.isArray(rows)) return { hasStableTrain, hasNightlyTrain, hasBundleEvidence };
++  for (const row of rows) {
++    if (!isUsableCatalogRelease(row)) continue;
++    const lower = ((row as CatalogReleaseRow).tag_name as string).toLowerCase();
++    if (!lower.startsWith(prefix)) continue;
++    hasBundleEvidence = true;
++    const base = lower.slice(prefix.length).replace(/-fh\d+$/, "");
++    if (!/^\d+\.\d+\.\d+/.test(base)) continue;
++    if (/-nightly\.\d{8}\./.test(base)) {
++      hasNightlyTrain = true;
++    } else if (/-preview\.\d{8}\./.test(base) || /-pr\./.test(base)) {
++      continue;
++    } else {
++      hasStableTrain = true;
++    }
++  }
++  return { hasStableTrain, hasNightlyTrain, hasBundleEvidence };
++}
++
++// Manifest trains verified against shipped releases: a track counts as
++// supported only when the catalog both declares it AND serves builds for
++// it. Without bundle evidence (nothing built yet, legacy publishers) the
++// manifest stands on its own.
++export function resolveSupportedTrains(
++  manifestTrains: ForkHubCatalogTrains,
++  releaseRows: unknown,
++): ForkHubCatalogTrains {
++  const released = resolveReleasedTrains(releaseRows, FORKHUB_T3CODE_TARGET_SLUG);
++  if (!released.hasBundleEvidence) return manifestTrains;
++  return {
++    hasStableTrain: manifestTrains.hasStableTrain && released.hasStableTrain,
++    hasNightlyTrain: manifestTrains.hasNightlyTrain && released.hasNightlyTrain,
++  };
 +}
 +
 +// Which tracks the Update track selector offers. Unknown trains (never
@@ -4460,13 +4578,13 @@ index 0c4991c1..79c11839 100644
      ),
 diff --git a/apps/web/src/components/forkHub.logic.test.ts b/apps/web/src/components/forkHub.logic.test.ts
 new file mode 100644
-index 00000000..8e6b3b9d
+index 00000000..749d2155
 --- /dev/null
 +++ b/apps/web/src/components/forkHub.logic.test.ts
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,221 @@
 +import { describe, expect, it, vi } from "vite-plus/test";
 +
-+import { checkForkHubOwner, normalizeForkHubOwner, resolveTrainsFromUpstreamManifest } from "./forkHub.logic";
++import { checkForkHubOwner, normalizeForkHubOwner, resolveReleasedTrains, resolveSupportedTrains, resolveTrainsFromUpstreamManifest } from "./forkHub.logic";
 +
 +function jsonResponse(status: number, body: unknown): Response {
 +  return {
@@ -4617,13 +4735,80 @@ index 00000000..8e6b3b9d
 +    const result = await checkForkHubOwner("with-fh", fetchImpl as unknown as typeof fetch);
 +    expect(result).toMatchObject({ hasStableTrain: true, hasNightlyTrain: false });
 +  });
++
++  it("hides a declared train with no shipped builds", async () => {
++    const fetchImpl = vi.fn(async (url: string) =>
++      String(url).includes("/contents/")
++        ? manifestResponse(["stable", "nightly"])
++        : jsonResponse(200, [
++            { tag_name: "pingdotgg-t3code--v0.0.45-nightly.20260930.2468-fh1" },
++            { tag_name: "v0.0.45-nightly.20260930.2468.fh.with-fh.1" },
++          ]),
++    );
++    const result = await checkForkHubOwner("with-fh", fetchImpl as unknown as typeof fetch);
++    expect(result).toMatchObject({ hasStableTrain: false, hasNightlyTrain: true });
++  });
++});
++
++describe("resolveReleasedTrains", () => {
++  const slug = "pingdotgg-t3code";
++  it("reads trains from this target's bundle tags only", () => {
++    expect(
++      resolveReleasedTrains(
++        [
++          { tag_name: "pingdotgg-t3code--v0.0.45-nightly.20260930.2468-fh1" },
++          { tag_name: "pingdotgg-t3code--v0.0.44-fh2" },
++          // Another target's stable build: not ours.
++          { tag_name: "natively-ai-assistant-natively-cluely-ai-assistant--V2.8.8-fh16" },
++          { tag_name: "v2.8.8-fh.with-fh.3" },
++          // Updater tags carry no target: ignored for verification.
++          { tag_name: "v0.0.45-nightly.20260930.2468.fh.with-fh.1" },
++          { tag_name: "v2.8.8-fh.with-fh.3", draft: true },
++        ],
++        slug,
++      ),
++    ).toEqual({ hasStableTrain: true, hasNightlyTrain: true, hasBundleEvidence: true });
++  });
++
++  it("matches capital-V bundle tags and reports no evidence without them", () => {
++    expect(
++      resolveReleasedTrains(
++        [{ tag_name: "PingDotGG-T3Code--V0.0.45-nightly.20260930.2468-fh1" }],
++        slug,
++      ),
++    ).toMatchObject({ hasNightlyTrain: true, hasBundleEvidence: true });
++    expect(resolveReleasedTrains([{ tag_name: "v0.0.45-nightly.20260930.2468.fh.with-fh.1" }], slug)).toEqual({
++      hasStableTrain: false,
++      hasNightlyTrain: false,
++      hasBundleEvidence: false,
++    });
++    expect(resolveReleasedTrains(null, slug).hasBundleEvidence).toBe(false);
++  });
++});
++
++describe("resolveSupportedTrains", () => {
++  it("intersects declared trains with shipped builds", () => {
++    const nightlyOnlyBundles = [{ tag_name: "pingdotgg-t3code--v0.0.45-nightly.20260930.2468-fh1" }];
++    expect(
++      resolveSupportedTrains({ hasStableTrain: true, hasNightlyTrain: true }, nightlyOnlyBundles),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: true });
++    expect(
++      resolveSupportedTrains({ hasStableTrain: false, hasNightlyTrain: true }, nightlyOnlyBundles),
++    ).toEqual({ hasStableTrain: false, hasNightlyTrain: true });
++  });
++
++  it("trusts the manifest without bundle evidence", () => {
++    const declared = { hasStableTrain: true, hasNightlyTrain: true };
++    expect(resolveSupportedTrains(declared, [{ tag_name: "v1.0.0" }])).toEqual(declared);
++    expect(resolveSupportedTrains(declared, null)).toEqual(declared);
++  });
 +});
 diff --git a/apps/web/src/components/forkHub.logic.ts b/apps/web/src/components/forkHub.logic.ts
 new file mode 100644
-index 00000000..6dba166c
+index 00000000..9f0c5386
 --- /dev/null
 +++ b/apps/web/src/components/forkHub.logic.ts
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,253 @@
 +import type { DesktopForkHubRepo } from "@t3tools/contracts";
 +
 +/**
@@ -4697,6 +4882,61 @@ index 00000000..6dba166c
 +        !/-pr\./.test(tag),
 +    ),
 +    hasNightlyTrain: versionTags.some((tag) => /-nightly\.\d{8}\./.test(tag)),
++  };
++}
++
++// Target slug matching the shared builder's namespaced bundle tags:
++// `github.com/pingdotgg/t3code` builds ship as
++// `pingdotgg-t3code--v<upstream-tag>-fh<n>`. Bundle tags (unlike updater
++// tags) name their target, so they attribute releases to the right app in
++// a shared catalog. Mirrors the main-process verifier
++// (apps/desktop/src/updates/updateChannels.ts) for renderer-side Check.
++export const FORKHUB_T3CODE_TARGET_SLUG = "pingdotgg-t3code";
++
++export interface ForkHubReleasedTrains {
++  readonly hasStableTrain: boolean;
++  readonly hasNightlyTrain: boolean;
++  /** False when no bundle tag names this target — nothing to verify against. */
++  readonly hasBundleEvidence: boolean;
++}
++
++export function resolveReleasedTrains(rows: unknown, targetSlug: string): ForkHubReleasedTrains {
++  const prefix = `${targetSlug.toLowerCase()}--v`;
++  let hasStableTrain = false;
++  let hasNightlyTrain = false;
++  let hasBundleEvidence = false;
++  if (!Array.isArray(rows)) return { hasStableTrain, hasNightlyTrain, hasBundleEvidence };
++  for (const row of rows) {
++    if (!isUsableRelease(row)) continue;
++    const lower = ((row as GitHubReleaseRow).tag_name as string).toLowerCase();
++    if (!lower.startsWith(prefix)) continue;
++    hasBundleEvidence = true;
++    const base = lower.slice(prefix.length).replace(/-fh\d+$/, "");
++    if (!/^\d+\.\d+\.\d+/.test(base)) continue;
++    if (/-nightly\.\d{8}\./.test(base)) {
++      hasNightlyTrain = true;
++    } else if (/-preview\.\d{8}\./.test(base) || /-pr\./.test(base)) {
++      continue;
++    } else {
++      hasStableTrain = true;
++    }
++  }
++  return { hasStableTrain, hasNightlyTrain, hasBundleEvidence };
++}
++
++// Manifest trains verified against shipped releases: a track counts as
++// supported only when the catalog both declares it AND serves builds for
++// it. Without bundle evidence (nothing built yet, legacy publishers) the
++// manifest stands on its own.
++export function resolveSupportedTrains(
++  manifestTrains: ForkHubCatalogTrains,
++  releaseRows: unknown,
++): ForkHubCatalogTrains {
++  const released = resolveReleasedTrains(releaseRows, FORKHUB_T3CODE_TARGET_SLUG);
++  if (!released.hasBundleEvidence) return manifestTrains;
++  return {
++    hasStableTrain: manifestTrains.hasStableTrain && released.hasStableTrain,
++    hasNightlyTrain: manifestTrains.hasNightlyTrain && released.hasNightlyTrain,
 +  };
 +}
 +
@@ -4795,11 +5035,13 @@ index 00000000..6dba166c
 +    );
 +  }
 +  // Authoritative trains first: the catalog manifest declares per-target
-+  // trains. Falls back to the tag scan when the publisher has no manifest
-+  // entry for this app.
++  // trains. Verified against this target's shipped bundle releases, so a
++  // declared-but-unbuilt train is never offered. Falls back to the tag scan
++  // when the publisher has no manifest entry for this app.
 +  const manifestTrains = await readTrainsFromUpstreamManifest(owner, repo, fetchImpl);
-+  const { hasStableTrain, hasNightlyTrain } =
-+    manifestTrains ?? resolveCatalogTrains(releases);
++  const { hasStableTrain, hasNightlyTrain } = manifestTrains
++    ? resolveSupportedTrains(manifestTrains, rows)
++    : resolveCatalogTrains(releases);
 +  if (!hasStableTrain && !hasNightlyTrain) {
 +    throw new Error(
 +      `${owner}/${repo} has releases but serves neither the stable nor the nightly train. Ask them to publish a ForkHub build first.`,

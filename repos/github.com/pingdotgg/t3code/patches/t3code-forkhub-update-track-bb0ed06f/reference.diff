@@ -195,7 +195,7 @@ index 95922bdf..595ad35a 100644
        preference,
        env: input.env,
 diff --git a/apps/desktop/src/app/DesktopEnvironment.test.ts b/apps/desktop/src/app/DesktopEnvironment.test.ts
-index b5aabf25..b32489b0 100644
+index b5aabf25..5f5de25e 100644
 --- a/apps/desktop/src/app/DesktopEnvironment.test.ts
 +++ b/apps/desktop/src/app/DesktopEnvironment.test.ts
 @@ -155,6 +155,36 @@ describe("DesktopEnvironment", () => {
@@ -235,7 +235,7 @@ index b5aabf25..b32489b0 100644
    it.effect("keeps implicit development state separate from production state", () =>
      Effect.gen(function* () {
        const development = yield* makeEnvironment(
-@@ -182,6 +212,27 @@ describe("DesktopEnvironment", () => {
+@@ -182,6 +212,34 @@ describe("DesktopEnvironment", () => {
      }),
    );
  
@@ -248,8 +248,15 @@ index b5aabf25..b32489b0 100644
 +      {
 +        baseName: "T3 Code",
 +        stageLabel: "Nightly",
-+        displayName: "T3 Code x ForkHub",
++        displayName: "T3 Code (imbios, Nightly)",
 +      },
++    );
++    assert.deepEqual(
++      DesktopEnvironment.resolveDesktopAppBranding({
++        isDevelopment: false,
++        appVersion: "0.0.42-fh.imbios.1",
++      }).displayName,
++      "T3 Code (imbios, Alpha)",
 +    );
 +    assert.deepEqual(
 +      DesktopEnvironment.resolveDesktopAppBranding({
@@ -264,14 +271,14 @@ index b5aabf25..b32489b0 100644
      Effect.gen(function* () {
        const environment = yield* makeEnvironment();
 diff --git a/apps/desktop/src/app/DesktopEnvironment.ts b/apps/desktop/src/app/DesktopEnvironment.ts
-index beb09bd5..f47f9d5b 100644
+index beb09bd5..0e1aa47c 100644
 --- a/apps/desktop/src/app/DesktopEnvironment.ts
 +++ b/apps/desktop/src/app/DesktopEnvironment.ts
 @@ -12,6 +12,7 @@ import * as Option from "effect/Option";
  import * as Path from "effect/Path";
  
  import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
-+import { isForkHubDerivedVersion } from "../updates/updateChannels.ts";
++import { isForkHubDerivedVersion, resolveForkHubVersionOwner } from "../updates/updateChannels.ts";
  import * as DesktopConfig from "./DesktopConfig.ts";
  import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
  import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
@@ -285,7 +292,7 @@ index beb09bd5..f47f9d5b 100644
      readonly stateDir: string;
      readonly desktopSettingsPath: string;
      readonly clientSettingsPath: string;
-@@ -108,11 +112,22 @@ function resolveDesktopAppStageLabel(input: {
+@@ -108,11 +112,25 @@ function resolveDesktopAppStageLabel(input: {
    return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
  }
  
@@ -297,18 +304,21 @@ index beb09bd5..f47f9d5b 100644
  }): DesktopAppBranding {
    const stageLabel = resolveDesktopAppStageLabel(input);
 +  // The version itself carries ForkHub provenance (`.fh.<owner>.<n>`), so a
-+  // ForkHub install brands itself with no build-time flag to lose.
++  // ForkHub install brands itself with no build-time flag to lose. The
++  // display name carries the publisher and train, e.g.
++  // "T3 Code (with-fh, Nightly)".
 +  if (!input.isDevelopment && isForkHubDerivedVersion(input.appVersion)) {
++    const owner = resolveForkHubVersionOwner(input.appVersion);
 +    return {
 +      baseName: APP_BASE_NAME,
 +      stageLabel,
-+      displayName: FORKHUB_APP_DISPLAY_NAME,
++      displayName: owner ? `${APP_BASE_NAME} (${owner}, ${stageLabel})` : FORKHUB_APP_DISPLAY_NAME,
 +    };
 +  }
    return {
      baseName: APP_BASE_NAME,
      stageLabel,
-@@ -166,10 +181,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
+@@ -166,10 +184,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
        : input.platform === "darwin"
          ? path.join(homeDirectory, "Library", "Application Support")
          : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
@@ -323,7 +333,7 @@ index beb09bd5..f47f9d5b 100644
    });
    const rootDir = path.resolve(input.dirname, "../../..");
    const appRoot = input.isPackaged ? input.appPath : rootDir;
-@@ -188,8 +207,21 @@ const make = Effect.fn("desktop.environment.make")(function* (
+@@ -188,8 +210,21 @@ const make = Effect.fn("desktop.environment.make")(function* (
      joinPath: path.join,
      t3Home: config.t3Home,
    });
@@ -347,7 +357,7 @@ index beb09bd5..f47f9d5b 100644
    const linuxApplicationsDir = path.join(
      Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
      "applications",
-@@ -209,6 +241,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
+@@ -209,6 +244,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
      homeDirectory,
      appDataDirectory,
      baseDir,
@@ -355,7 +365,7 @@ index beb09bd5..f47f9d5b 100644
      stateDir,
      desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),
      clientSettingsPath: path.join(stateDir, "client-settings.json"),
-@@ -240,10 +273,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
+@@ -240,10 +276,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
      branding,
      displayName,
      appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
@@ -689,7 +699,7 @@ index 00000000..084a1d5d
 +  Effect.withSpan("desktop.forkhub.stockImport"),
 +);
 diff --git a/apps/desktop/src/app/DesktopPreReadyPlatform.ts b/apps/desktop/src/app/DesktopPreReadyPlatform.ts
-index c07334f3..fac6c22c 100644
+index 9b73a5d8..384e1d93 100644
 --- a/apps/desktop/src/app/DesktopPreReadyPlatform.ts
 +++ b/apps/desktop/src/app/DesktopPreReadyPlatform.ts
 @@ -38,6 +38,7 @@ export const resolveEarlyLinuxElectronOptionsFromProcess =
@@ -732,10 +742,10 @@ index 0914167c..4efc8f9d 100644
        setWslDistro: () => Effect.die("unexpected WSL distro change"),
        setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
 diff --git a/apps/desktop/src/ipc/DesktopIpcHandlers.ts b/apps/desktop/src/ipc/DesktopIpcHandlers.ts
-index c97c6025..d9d782ca 100644
+index 4b43cd0e..83c75b38 100644
 --- a/apps/desktop/src/ipc/DesktopIpcHandlers.ts
 +++ b/apps/desktop/src/ipc/DesktopIpcHandlers.ts
-@@ -34,6 +34,7 @@ import {
+@@ -35,6 +35,7 @@ import {
    downloadUpdate,
    getUpdateState,
    installUpdate,
@@ -743,7 +753,7 @@ index c97c6025..d9d782ca 100644
    setUpdateChannel,
  } from "./methods/updates.ts";
  import {
-@@ -137,6 +138,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
+@@ -140,6 +141,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
    yield* ipc.handle(probeRemoteEditors);
    yield* ipc.handle(getUpdateState);
    yield* ipc.handle(setUpdateChannel);
@@ -752,7 +762,7 @@ index c97c6025..d9d782ca 100644
    yield* ipc.handle(installUpdate);
    yield* ipc.handle(checkForUpdate);
 diff --git a/apps/desktop/src/ipc/channels.ts b/apps/desktop/src/ipc/channels.ts
-index e8a688c1..eb79fb3b 100644
+index 151cd633..89e21096 100644
 --- a/apps/desktop/src/ipc/channels.ts
 +++ b/apps/desktop/src/ipc/channels.ts
 @@ -20,6 +20,7 @@ export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-re
@@ -796,10 +806,10 @@ index b2212609..2fb4905b 100644
    channel: IpcChannels.UPDATE_DOWNLOAD_CHANNEL,
    payload: Schema.Void,
 diff --git a/apps/desktop/src/preload.ts b/apps/desktop/src/preload.ts
-index 53d8cca7..7b2f47e6 100644
+index e84a5821..fa9d94f7 100644
 --- a/apps/desktop/src/preload.ts
 +++ b/apps/desktop/src/preload.ts
-@@ -248,6 +248,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
+@@ -252,6 +252,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
    getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
    setUpdateChannel: (channel) =>
      ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),
@@ -2048,10 +2058,10 @@ index 7fd50a82..380f1bff 100644
      hostArch: "arm64",
      appArch: "arm64",
 diff --git a/apps/desktop/src/updates/updateChannels.test.ts b/apps/desktop/src/updates/updateChannels.test.ts
-index acf4155f..c155dd22 100644
+index acf4155f..0e7a5447 100644
 --- a/apps/desktop/src/updates/updateChannels.test.ts
 +++ b/apps/desktop/src/updates/updateChannels.test.ts
-@@ -1,6 +1,17 @@
+@@ -1,6 +1,18 @@
  import { describe, expect, it } from "vite-plus/test";
  
 -import { isNightlyDesktopVersion, resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
@@ -2061,6 +2071,7 @@ index acf4155f..c155dd22 100644
 +  isVersionAllowedOnUpdateChannel,
 +  normalizeForkHubOwner,
 +  resolveCatalogTrains,
++  resolveForkHubVersionOwner,
 +  resolveTrainsFromUpstreamManifest,
 +  resolveDefaultDesktopUpdateChannel,
 +  resolveForkHubFeedConfig,
@@ -2070,7 +2081,7 @@ index acf4155f..c155dd22 100644
  
  describe("updateChannels", () => {
    it("keeps preview builds branded as nightly but on the latest update channel", () => {
-@@ -12,5 +23,166 @@ describe("updateChannels", () => {
+@@ -12,5 +24,176 @@ describe("updateChannels", () => {
    it("only matches the first prerelease identifier", () => {
      expect(isNightlyDesktopVersion("1.2.3-foo-preview.20260911.1")).toBe(false);
      expect(isNightlyDesktopVersion("1.2.3")).toBe(false);
@@ -2113,6 +2124,16 @@ index acf4155f..c155dd22 100644
 +    expect(isForkHubDerivedVersion("0.0.42-fh.with-fh.2")).toBe(true);
 +    expect(isForkHubDerivedVersion("0.0.43-nightly.20260924.2187")).toBe(false);
 +    expect(isForkHubDerivedVersion("0.0.42")).toBe(false);
++  });
++
++  it("resolves the publisher from a ForkHub version's provenance suffix", () => {
++    expect(resolveForkHubVersionOwner("0.0.43-nightly.20260924.2187.fh.with-fh.1")).toBe("with-fh");
++    expect(resolveForkHubVersionOwner("0.0.42-fh.with-fh.2")).toBe("with-fh");
++    expect(resolveForkHubVersionOwner("0.0.43-nightly.20260924.2187")).toBe(null);
++    expect(resolveForkHubVersionOwner("0.0.42")).toBe(null);
++  });
++
++  it("follows the publisher catalog on ForkHub builds", () => {
 +    // A ForkHub install follows its publisher's catalog on the selected
 +    // track: nightly- and stable-based builds on either.
 +    expect(
@@ -2238,10 +2259,10 @@ index acf4155f..c155dd22 100644
    });
  });
 diff --git a/apps/desktop/src/updates/updateChannels.ts b/apps/desktop/src/updates/updateChannels.ts
-index e7f9a2f8..84cc0c4e 100644
+index e7f9a2f8..75fda129 100644
 --- a/apps/desktop/src/updates/updateChannels.ts
 +++ b/apps/desktop/src/updates/updateChannels.ts
-@@ -1,18 +1,171 @@
+@@ -1,18 +1,180 @@
 -import type { DesktopUpdateChannel } from "@t3tools/contracts";
 +import type { DesktopForkHubRepo, DesktopUpdateChannel } from "@t3tools/contracts";
 +import { DEFAULT_FORKHUB_PUBLISHER } from "@t3tools/contracts";
@@ -2259,6 +2280,15 @@ index e7f9a2f8..84cc0c4e 100644
 +
 +export function isForkHubDerivedVersion(version: string): boolean {
 +  return FORKHUB_VERSION_SUFFIX_PATTERN.test(version);
++}
++
++// The publisher baked into a ForkHub version's provenance suffix
++// (`.fh.<owner>.<n>` / `-fh.<owner>.<n>`), e.g. `with-fh`. Names the
++// install after its publisher; null when the version carries no suffix.
++const FORKHUB_VERSION_OWNER_PATTERN = /[-.]fh\.([a-z0-9-]+)\.\d+$/;
++
++export function resolveForkHubVersionOwner(version: string): string | null {
++  return version.match(FORKHUB_VERSION_OWNER_PATTERN)?.[1] ?? null;
 +}
  // Preview builds are the maintainers' test train, cut by hand from unreleased
  // branches to exercise the release flow. They share nightly's branding but
@@ -3560,7 +3590,7 @@ index f3e7818e..99d1ec27 100644
    hostArch: "x64",
    appArch: "x64",
 diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
-index 7caf6d1c..13a5144a 100644
+index 700e5184..ebb3db5f 100644
 --- a/packages/contracts/src/ipc.ts
 +++ b/packages/contracts/src/ipc.ts
 @@ -105,6 +105,19 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
@@ -3612,7 +3642,7 @@ index 7caf6d1c..13a5144a 100644
    currentVersion: Schema.String,
    hostArch: DesktopRuntimeArchSchema,
    appArch: DesktopRuntimeArchSchema,
-@@ -1238,6 +1266,12 @@ export interface DesktopBridge {
+@@ -1241,6 +1269,12 @@ export interface DesktopBridge {
    onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
    getUpdateState: () => Promise<DesktopUpdateState>;
    setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
@@ -3626,7 +3656,7 @@ index 7caf6d1c..13a5144a 100644
    downloadUpdate: () => Promise<DesktopUpdateActionResult>;
    installUpdate: () => Promise<DesktopUpdateActionResult>;
 diff --git a/scripts/build-desktop-artifact.test.ts b/scripts/build-desktop-artifact.test.ts
-index 98ba0aae..22a683af 100644
+index 98ba0aae..2738c0ca 100644
 --- a/scripts/build-desktop-artifact.test.ts
 +++ b/scripts/build-desktop-artifact.test.ts
 @@ -260,6 +260,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
@@ -3642,8 +3672,32 @@ index 98ba0aae..22a683af 100644
    });
  
    it("switches desktop packaging product names to nightly for nightly builds", () => {
+@@ -267,6 +273,23 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
+   });
+ 
++  it("names ForkHub builds after their publisher and train", () => {
++    const previous = process.env.T3CODE_FORKHUB_BUILD;
++    process.env.T3CODE_FORKHUB_BUILD = "1";
++    try {
++      assert.equal(
++        resolveDesktopProductName("0.0.45-nightly.20260930.2468.fh.with-fh.1"),
++        "T3 Code (with-fh, Nightly)",
++      );
++      assert.equal(resolveDesktopProductName("0.0.44-fh.with-fh.2"), "T3 Code (with-fh, Alpha)");
++      // Suffixed builds without a parseable owner keep the legacy name.
++      assert.equal(resolveDesktopProductName("0.0.45-nightly.20260930.2468"), "T3 Code x ForkHub");
++    } finally {
++      if (previous === undefined) delete process.env.T3CODE_FORKHUB_BUILD;
++      else process.env.T3CODE_FORKHUB_BUILD = previous;
++    }
++  });
++
+   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
+     assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), {
+       macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 5b22fddb..c23eb685 100644
+index 5b22fddb..c0c642e8 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
 @@ -2536,7 +2536,7 @@ export function resolveDesktopRuntimeDependencies(
@@ -3677,7 +3731,7 @@ index 5b22fddb..c23eb685 100644
    if (resolveDesktopUpdateChannel(version) === "nightly") {
      return {
        macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-@@ -2613,7 +2619,14 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
+@@ -2613,7 +2619,23 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
    return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
  }
  
@@ -3687,8 +3741,17 @@ index 5b22fddb..c23eb685 100644
 +
  export function resolveDesktopProductName(version: string): string {
 +  // ForkHub builds install side by side with upstream under their own name
-+  // so a patched install is never mistaken for a stock one.
-+  if (isForkHubDesktopBuild()) return "T3 Code x ForkHub";
++  // so a patched install is never mistaken for a stock one. The name carries
++  // the publisher and train from the provenance suffix, e.g.
++  // "T3 Code (with-fh, Nightly)".
++  if (isForkHubDesktopBuild()) {
++    const owner = version.match(/[-.]fh\.([a-z0-9-]+)\.\d+$/)?.[1];
++    if (owner) {
++      const train = resolveDesktopUpdateChannel(version) === "nightly" ? "Nightly" : "Alpha";
++      return `T3 Code (${owner}, ${train})`;
++    }
++    return "T3 Code x ForkHub";
++  }
    return resolveDesktopUpdateChannel(version) === "nightly"
      ? "T3 Code (Nightly)"
      : (desktopPackageJson.productName ?? "T3 Code");

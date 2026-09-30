@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 16
+version: 17
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -187,4 +187,11 @@ patched install is never mistaken for stock.
     before any write, and table columns intersect so schema drift degrades
     to skipped tables instead of failures. The preview reports project
     titles with thread/message/event counts.
+14. **Declared trains are verified against shipped releases.** The
+    manifest stays authoritative, but a track is only offered when this
+    target's namespaced bundle releases (`<slug>--v<tag>-fh<n>`, the only
+    tags that name their target in a shared catalog) actually serve it.
+    A declared-but-unbuilt train is never offered; without bundle
+    evidence the manifest stands alone, and publishers without a manifest
+    keep the legacy tag scan.
 

@@ -5654,26 +5654,6 @@ index f3e7818e..99d1ec27 100644
    currentVersion: "1.0.0",
    hostArch: "x64",
    appArch: "x64",
-diff --git a/assets/forkhub/logo.svg b/assets/forkhub/logo.svg
-new file mode 100644
-index 00000000..2797e1e7
---- /dev/null
-+++ b/assets/forkhub/logo.svg
-@@ -0,0 +1,14 @@
-+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-+  <rect width="512" height="512" rx="112" fill="#18181B"/>
-+  <!-- fork links -->
-+  <path d="M176 196 v64 a80 80 0 0 0 80 80 h8" fill="none" stroke="#F97316" stroke-width="28" stroke-linecap="round"/>
-+  <path d="M336 196 v64 a80 80 0 0 1 -80 80 h-8" fill="none" stroke="#F97316" stroke-width="28" stroke-linecap="round"/>
-+  <path d="M256 340 v20" fill="none" stroke="#F97316" stroke-width="28" stroke-linecap="round"/>
-+  <!-- nodes -->
-+  <circle cx="176" cy="152" r="44" fill="#F97316"/>
-+  <circle cx="336" cy="152" r="44" fill="#F97316"/>
-+  <circle cx="256" cy="392" r="44" fill="#F97316"/>
-+  <circle cx="176" cy="152" r="16" fill="#18181B"/>
-+  <circle cx="336" cy="152" r="16" fill="#18181B"/>
-+  <circle cx="256" cy="392" r="16" fill="#fff"/>
-+</svg>
 diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
 index 700e5184..5c08a8f3 100644
 --- a/packages/contracts/src/ipc.ts
@@ -5807,20 +5787,8 @@ index 700e5184..5c08a8f3 100644
    checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
    downloadUpdate: () => Promise<DesktopUpdateActionResult>;
    installUpdate: () => Promise<DesktopUpdateActionResult>;
-diff --git a/scripts/apply-web-brand-assets.ts b/scripts/apply-web-brand-assets.ts
-index 450af75f..67cf9516 100644
---- a/scripts/apply-web-brand-assets.ts
-+++ b/scripts/apply-web-brand-assets.ts
-@@ -18,6 +18,7 @@ const WEB_ASSET_BRANDS = [
-   "development",
-   "nightly",
-   "production",
-+  "forkhub",
- ] as const satisfies ReadonlyArray<WebAssetBrand>;
- 
- export const applyWebBrandAssets = Effect.fn("applyWebBrandAssets")(function* (
 diff --git a/scripts/build-desktop-artifact.test.ts b/scripts/build-desktop-artifact.test.ts
-index 98ba0aae..9f1dc014 100644
+index 98ba0aae..2738c0ca 100644
 --- a/scripts/build-desktop-artifact.test.ts
 +++ b/scripts/build-desktop-artifact.test.ts
 @@ -260,6 +260,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
@@ -5860,31 +5828,8 @@ index 98ba0aae..9f1dc014 100644
    it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
      assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), {
        macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-@@ -281,6 +304,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
-     });
-   });
- 
-+  it("wears the ForkHub logo on every ForkHub train", () => {
-+    for (const version of [
-+      "0.0.45-nightly.20260930.2468.fh.with-fh.1",
-+      "0.0.44-fh.with-fh.2",
-+    ]) {
-+      assert.deepStrictEqual(resolveDesktopBuildIconAssets(version), {
-+        macIconPng: BRAND_ASSET_PATHS.forkhubMacIconPng,
-+        linuxIconPng: BRAND_ASSET_PATHS.forkhubLinuxIconPng,
-+        windowsIconIco: BRAND_ASSET_PATHS.forkhubWindowsIconIco,
-+      });
-+      assert.equal(resolveDesktopWebAssetBrand(version), "forkhub");
-+    }
-+    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
-+    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
-+  });
-+
-   it("switches the bundled splash and favicon branding for nightly versions", () => {
-     assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
-     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
 diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
-index 5b22fddb..5cbc472d 100644
+index 5b22fddb..c0c642e8 100644
 --- a/scripts/build-desktop-artifact.ts
 +++ b/scripts/build-desktop-artifact.ts
 @@ -2536,7 +2536,7 @@ export function resolveDesktopRuntimeDependencies(
@@ -5908,43 +5853,22 @@ index 5b22fddb..5cbc472d 100644
  }
  
  // Pull request builds (`-pr.<n>.`) and the maintainers' preview train
-@@ -2577,10 +2580,23 @@ export function isDesktopPreviewVersion(version: string): boolean {
- }
- 
- export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
-+  if (isForkHubProvenanceVersion(version)) return "forkhub";
-   return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
+@@ -2581,6 +2584,9 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
  }
  
  export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
-+  // ForkHub installs wear the ForkHub logo on every train: the rasters are
-+  // generated from assets/forkhub/logo.svg before the build
-+  // (scripts/generate-forkhub-icons.sh).
-+  if (isForkHubProvenanceVersion(version)) {
-+    return {
-+      macIconPng: BRAND_ASSET_PATHS.forkhubMacIconPng,
-+      linuxIconPng: BRAND_ASSET_PATHS.forkhubLinuxIconPng,
-+      windowsIconIco: BRAND_ASSET_PATHS.forkhubWindowsIconIco,
-+    };
-+  }
-+  // Icons follow the train: a nightly-based build wears nightly's icons, a
-+  // stable-based one wears production's.
++  // Icons follow the train: a nightly-based ForkHub build wears nightly's
++  // icons, a stable-based one wears production's. The ForkHub identity
++  // lives in the product name and in-app brand, not the icon.
    if (resolveDesktopUpdateChannel(version) === "nightly") {
      return {
        macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-@@ -2613,7 +2629,30 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
+@@ -2613,7 +2619,23 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
    return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
  }
  
 +export function isForkHubDesktopBuild(): boolean {
 +  return process.env.T3CODE_FORKHUB_BUILD?.trim() === "1";
-+}
-+
-+// ForkHub provenance suffix on the version itself (`.fh.<owner>.<n>` after
-+// a prerelease part, `-fh.<owner>.<n>` on a bare base). Version-derived so
-+// icon and web-brand selection need no build-time flag to agree.
-+export function isForkHubProvenanceVersion(version: string): boolean {
-+  return /[-.]fh\.[a-z0-9-]+\.\d+$/.test(version);
 +}
 +
  export function resolveDesktopProductName(version: string): string {
@@ -5963,111 +5887,3 @@ index 5b22fddb..5cbc472d 100644
    return resolveDesktopUpdateChannel(version) === "nightly"
      ? "T3 Code (Nightly)"
      : (desktopPackageJson.productName ?? "T3 Code");
-@@ -3425,6 +3464,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
- 
-   const appVersion = options.version ?? serverPackageJson.version;
-   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
-+  for (const assetPath of [iconAssets.macIconPng, iconAssets.linuxIconPng, iconAssets.windowsIconIco]) {
-+    if (!(yield* fs.exists(path.join(repoRoot, assetPath)))) {
-+      return yield* Effect.fail(
-+        new Error(
-+          `Missing icon asset at ${assetPath}. ForkHub icons are generated, not checked in — run scripts/generate-forkhub-icons.sh first.`,
-+        ),
-+      );
-+    }
-+  }
-   const commitHash = yield* resolveGitCommitHash(repoRoot);
-   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
-   const stageRoot = yield* mkdir({
-diff --git a/scripts/generate-forkhub-icons.sh b/scripts/generate-forkhub-icons.sh
-new file mode 100644
-index 00000000..02bded33
---- /dev/null
-+++ b/scripts/generate-forkhub-icons.sh
-@@ -0,0 +1,45 @@
-+#!/bin/sh
-+# Rasterize the ForkHub logo (assets/forkhub/logo.svg) into the PNG/ICO set
-+# the desktop artifact build consumes. The rasters are build artifacts, not
-+# repo content: reference-based catalog patches cannot carry binaries, so CI
-+# regenerates them (see the target build.sh) and local ForkHub builds run
-+# this script first.
-+#
-+# Requires: rsvg-convert (librsvg2-bin), convert (imagemagick).
-+set -eu
-+
-+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-+SRC="$ROOT/assets/forkhub/logo.svg"
-+OUT="$ROOT/assets/forkhub"
-+
-+[ -f "$SRC" ] || { echo "generate-forkhub-icons: missing $SRC" >&2; exit 1; }
-+command -v rsvg-convert >/dev/null 2>&1 || {
-+  echo "generate-forkhub-icons: missing rsvg-convert (apt install librsvg2-bin)" >&2
-+  exit 1
-+}
-+command -v convert >/dev/null 2>&1 || {
-+  echo "generate-forkhub-icons: missing convert (apt install imagemagick)" >&2
-+  exit 1
-+}
-+
-+mkdir -p "$OUT"
-+raster() {
-+  # $1 = size, $2 = output
-+  rsvg-convert -w "$1" -h "$1" "$SRC" -o "$2"
-+}
-+
-+raster 1024 "$OUT/forkhub-macos-1024.png"
-+cp "$OUT/forkhub-macos-1024.png" "$OUT/forkhub-universal-1024.png"
-+raster 180 "$OUT/forkhub-web-apple-touch-180.png"
-+raster 32 "$OUT/forkhub-web-favicon-32x32.png"
-+raster 16 "$OUT/forkhub-web-favicon-16x16.png"
-+convert "$OUT/forkhub-web-favicon-16x16.png" "$OUT/forkhub-web-favicon-32x32.png" \
-+  "$OUT/forkhub-web-favicon.ico"
-+raster 48 /tmp/forkhub-icon-48.png
-+raster 256 /tmp/forkhub-icon-256.png
-+convert /tmp/forkhub-icon-48.png "$OUT/forkhub-web-favicon-16x16.png" \
-+  "$OUT/forkhub-web-favicon-32x32.png" /tmp/forkhub-icon-256.png \
-+  "$OUT/forkhub-windows.ico"
-+rm -f /tmp/forkhub-icon-48.png /tmp/forkhub-icon-256.png
-+
-+ls "$OUT"
-diff --git a/scripts/lib/brand-assets.ts b/scripts/lib/brand-assets.ts
-index 5bbcb0ef..9e0d7d67 100644
---- a/scripts/lib/brand-assets.ts
-+++ b/scripts/lib/brand-assets.ts
-@@ -29,9 +29,22 @@ export const BRAND_ASSET_PATHS = {
-   developmentWebFavicon16Png: "assets/dev/blueprint-web-favicon-16x16.png",
-   developmentWebFavicon32Png: "assets/dev/blueprint-web-favicon-32x32.png",
-   developmentWebAppleTouchIconPng: "assets/dev/blueprint-web-apple-touch-180.png",
-+
-+  // ForkHub art is generated, not checked in: reference-based catalog
-+  // patches cannot carry binaries, so the SVG source
-+  // (assets/forkhub/logo.svg) ships in-repo and CI/local ForkHub builds
-+  // rasterize it first (scripts/generate-forkhub-icons.sh).
-+  forkhubLogoSvg: "assets/forkhub/logo.svg",
-+  forkhubMacIconPng: "assets/forkhub/forkhub-macos-1024.png",
-+  forkhubLinuxIconPng: "assets/forkhub/forkhub-universal-1024.png",
-+  forkhubWindowsIconIco: "assets/forkhub/forkhub-windows.ico",
-+  forkhubWebFaviconIco: "assets/forkhub/forkhub-web-favicon.ico",
-+  forkhubWebFavicon16Png: "assets/forkhub/forkhub-web-favicon-16x16.png",
-+  forkhubWebFavicon32Png: "assets/forkhub/forkhub-web-favicon-32x32.png",
-+  forkhubWebAppleTouchIconPng: "assets/forkhub/forkhub-web-apple-touch-180.png",
- } as const;
- 
--export type WebAssetBrand = "development" | "nightly" | "production";
-+export type WebAssetBrand = "development" | "nightly" | "production" | "forkhub";
- 
- export const WEB_ASSET_CHANNELS = ["latest", "nightly"] as const;
- 
-@@ -76,6 +89,12 @@ const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
-     favicon32Png: BRAND_ASSET_PATHS.productionWebFavicon32Png,
-     appleTouchIconPng: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
-   },
-+  forkhub: {
-+    faviconIco: BRAND_ASSET_PATHS.forkhubWebFaviconIco,
-+    favicon16Png: BRAND_ASSET_PATHS.forkhubWebFavicon16Png,
-+    favicon32Png: BRAND_ASSET_PATHS.forkhubWebFavicon32Png,
-+    appleTouchIconPng: BRAND_ASSET_PATHS.forkhubWebAppleTouchIconPng,
-+  },
- } as const satisfies Record<WebAssetBrand, Record<keyof typeof WEB_ICON_TARGET_FILENAMES, string>>;
- 
- export function resolveWebIconOverrides(

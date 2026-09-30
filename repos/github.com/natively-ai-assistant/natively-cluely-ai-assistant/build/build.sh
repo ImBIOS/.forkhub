@@ -125,6 +125,20 @@ export PATH="$PWD/node_modules/.bin:$PATH"
 say "stamping version $FH_VERSION"
 npm pkg set "version=$FH_VERSION" >>"$LOG" 2>&1 || fail_soft "version stamp failed"
 
+# --- bake the fork's Google OAuth client id (calendar direct PKCE flow) ---
+# NATIVELY_GOOGLE_CLIENT_ID is a PUBLIC identifier (ships in every build that
+# has it), not a secret — the direct flow needs no secret. Absent: calendar
+# connect reports it is unconfigured instead of failing silently. (CI can only
+# see this var if the shared workflow forwards it; local fork releases set it
+# directly. See build/BUILD.md.)
+if [ -n "${NATIVELY_GOOGLE_CLIENT_ID:-}" ]; then
+  say "baking fork Google client id"
+  npm pkg set "build.extraMetadata.nativelyGoogleClientId=$NATIVELY_GOOGLE_CLIENT_ID" >>"$LOG" 2>&1 \
+    || fail_soft "client id stamp failed"
+else
+  say "no NATIVELY_GOOGLE_CLIENT_ID — calendar ships unconfigured (clear error at connect time)"
+fi
+
 # --- deb maintainer (electron-builder requires an author email for the
 # deb control file; upstream leaves `author` empty and has no Linux CI).
 # Fork-build identity only — the patch itself stays free of fork branding.
@@ -145,6 +159,9 @@ say "sharp mac deps (no-op on linux)"
 node scripts/ensure-sharp-mac-deps.js >>"$LOG" 2>&1 || say "ensure-sharp-mac-deps failed; continuing (linux)"
 
 # --- pack Linux installers only (mac needs signing, win needs its own runner) ---
+# The deb postinst hook arrives via git without the exec bit (patches are
+# text-only), so set it here where the mode doesn't matter how it arrived.
+chmod +x scripts/deb-after-install.sh 2>/dev/null || say "could not chmod deb hook; continuing"
 say "electron-builder (linux AppImage + deb)"
 ./node_modules/.bin/electron-builder --linux AppImage deb --publish never >>"$LOG" 2>&1 \
   || fail_soft "electron-builder failed (see BUILD_LOG.md)"

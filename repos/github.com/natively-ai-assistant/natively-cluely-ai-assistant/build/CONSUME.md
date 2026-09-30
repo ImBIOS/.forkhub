@@ -4,8 +4,11 @@ Patched Natively that updates from the ForkHub catalog instead of upstream.
 Same app, same data — installing it replaces a stock install and keeps
 everything, then it self-updates from here.
 
-1. **Install** the `Natively-*-x86_64.AppImage` below (or the `.deb`).
-   First run: `chmod +x Natively-*.AppImage && ./Natively-*.AppImage`.
+1. **Install** the `natively_*_amd64.deb` below (recommended — registers
+   with the desktop so the dock shows the icon and offers pin-to-dock),
+   or the `Natively-*-x86_64.AppImage` (`chmod +x`, then run; an AppImage
+   run directly has no registered desktop entry, so durable pinning needs
+   the `.deb`).
 2. **Trial works out of the box** — no sign-in; the free trial binds to
    this device via the open-source hardware-ID fallback.
 3. **Updates are automatic**: Settings → Version → Check. New ForkHub

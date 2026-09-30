@@ -63,6 +63,11 @@ deb, checksums, build log, notes).
 - **Premium submodule stays absent.** Fork builds ship open-source mode
   (`electron/premium/featureGate.ts`); the patch's `HardwareId` fallback
   chain is what makes trial/licensing work without it.
+- **Linux dock identity is deterministic.** The app pins userData then
+  sets the product name before any window exists (Linux-only), and the
+  build declares `StartupWMClass` + a cache-refreshing deb postinst, so
+  the dock shows the icon and offers pin-to-dock. Disguise renames still
+  apply later (stealth modes intentionally break association).
 - **Google calendar client (one-time maintainer setup).** Connect calendar
   uses the direct PKCE flow with the fork's own OAuth client: create a
   Google Cloud "Desktop app" OAuth client with redirect URI

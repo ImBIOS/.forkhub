@@ -63,6 +63,15 @@ deb, checksums, build log, notes).
 - **Premium submodule stays absent.** Fork builds ship open-source mode
   (`electron/premium/featureGate.ts`); the patch's `HardwareId` fallback
   chain is what makes trial/licensing work without it.
+- **Google calendar client (one-time maintainer setup).** Connect calendar
+  uses the direct PKCE flow with the fork's own OAuth client: create a
+  Google Cloud "Desktop app" OAuth client with redirect URI
+  `http://localhost:11111/auth/callback`, then build with
+  `NATIVELY_GOOGLE_CLIENT_ID=<id>` (baked into `build.extraMetadata` by
+  `build.sh`; the id is public, not a secret). Without it, connect
+  reports unconfigured instead of failing silently. CI forwarding of that
+  var through the shared workflow is a follow-up; local fork releases set
+  it directly.
 - **Known drift risk.** `reference.diff` is verified against the upstream
   tag at capture time (currently `v2.8.1`). When upstream drifts, the
   apply step fails loudly — re-derive via `fh` (`drift-check` →

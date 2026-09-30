@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 15
+version: 16
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -177,4 +177,14 @@ patched install is never mistaken for stock.
     (moved records reconnect with one click, local tokens and timestamps
     kept); prefs merge with the source winning except update identity,
     which never moves either way. Still needs a restart to apply.
+13. **Conversations move too.** Import/Export also carries projects with
+    their threads: the move copies orchestration events (project + thread
+    streams) plus all projection rows for moved ids, and the attachment
+    files those messages reference. Streams already present are skipped,
+    so reruns are no-ops and nothing ever duplicates. Identity tables
+    (auth, pairing, receipts, runtime, projector cursor) are never
+    touched; the destination database is snapshotted with VACUUM INTO
+    before any write, and table columns intersect so schema drift degrades
+    to skipped tables instead of failures. The preview reports project
+    titles with thread/message/event counts.
 

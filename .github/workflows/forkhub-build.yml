@@ -118,14 +118,23 @@ jobs:
           [ -n "$MATCH" ] || MATCH="$TRAIN_MATCH"
           [ -n "$IGNORE" ] || IGNORE="$TRAIN_IGNORE"
           TAGS=$(git ls-remote --tags --sort=-v:refname "$URL" \
-            | grep -o 'refs/tags/v[^^{}]*' | cut -d/ -f3 || true)
+            | grep -io 'refs/tags/v[^^{}]*' | cut -d/ -f3 || true)
+          # NOTE: the tag pool is case-insensitive (-i) so capital-V tags
+          # (e.g. upstream Natively's V2.8.8) are visible, and the final
+          # pick orders by lowercased version so the newest tag wins
+          # regardless of case. Per-target MATCH/IGNORE patterns below stay
+          # case-sensitive and still decide; uniform-lowercase pools (like
+          # T3's) resolve identically to before.
           if [ -n "$MATCH" ]; then
             TAGS=$(printf '%s\n' "$TAGS" | grep -E -- "$MATCH" || true)
           fi
           if [ -n "$IGNORE" ]; then
             TAGS=$(printf '%s\n' "$TAGS" | grep -v -E -- "$IGNORE" || true)
           fi
-          TAG=$(printf '%s\n' "$TAGS" | head -1 || true)
+          # Newest-first pick, case-insensitive so a capital-V tag (e.g.
+          # V2.8.8) beats an older lowercase one. Original tag casing is
+          # preserved for `git clone --branch`, which needs the exact case.
+          TAG=$(printf '%s\n' "$TAGS" | awk 'NF { print tolower($0) "\t" $0 }' | sort -V -k1,1 | cut -f2- | tail -1 || true)
           if [ -n "$TAG" ]; then
             git clone --depth 1 --branch "$TAG" "$URL" build
             echo "$TAG" > upstream_tag.txt

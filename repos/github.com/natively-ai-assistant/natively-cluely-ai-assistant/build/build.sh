@@ -56,7 +56,10 @@ case "$SUFFIX" in
     ;;
 esac
 OWNER=$(printf '%s' "$REPO" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')
-VER=$(printf '%s' "$TAG" | sed 's/^v//')
+# Strip leading v case-insensitively: upstream tags both styles (v2.8.1,
+# V2.8.8). A capital V inside the version would break semver parsing in
+# electron-updater (atom channel match) and the in-app gates.
+VER=$(printf '%s' "$TAG" | sed 's/^[vV]//')
 ESCAPED_BASE=$(printf '%s' "$VER" | sed 's/\./\\./g')
 EXISTING_TAGS=$(gh api "repos/$REPO/releases?per_page=100" --jq '.[].tag_name' 2>/dev/null) \
   || fail_soft "could not list releases to number the ForkHub build (gh api failed)"

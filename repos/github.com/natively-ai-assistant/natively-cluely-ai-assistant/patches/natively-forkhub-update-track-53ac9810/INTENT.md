@@ -5,7 +5,7 @@ target_repo: github.com/natively-ai-assistant/natively-cluely-ai-assistant
 target_area: [electron/update/updateFeed.ts, electron/update/ReleaseNotesManager.ts, electron/main.ts, electron/ipcHandlers.ts, electron/preload.ts, electron/services/HardwareId.ts, src/components/UpdateBanner.tsx, src/components/onboarding/OrchestratedToasterHost.tsx, src/types/electron.d.ts, package.json]
 status: draft
 applied_upstream_pr: none
-version: 2
+version: 3
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -13,7 +13,7 @@ owners: [Imamuzzaki Abu Salam]
 source_url: null
 imported_at: null
 created: 2026-09-27
-last_realized_against_commit: 4a06f12
+last_realized_against_commit: a2485e4
 verifies_with: node --test (focused suites, see verify.sh)
 ---
 
@@ -86,10 +86,21 @@ placeholder.
 
 ## Implementation notes
 
-- Realized against upstream `v2.8.1` (commit `4a06f12`) — the tag the
-  shared workflow's picker selects. v1 was captured against the fork's
-  `main` and did not apply upstream (trial promo had moved to
-  `OrchestratedToasterHost`, `docs/RELEASE.md` is fork-only).
+- Realized against upstream `V2.8.8` (commit `a2485e4`) — the tag the
+  shared workflow's case-insensitive picker selects. v2 chased `v2.8.1`;
+  the daily check would otherwise sit on a stale tag while upstream ships
+  capital-V releases.
+- v2.8.8 composition notes: the fork-counter tiebreak runs BEFORE
+  upstream's F-708 prerelease rule in both gates (two fork counters both
+  carry `-`), plus a fork→stock guard so F-708 can never cross a fork
+  build onto stock; stock-version behavior unchanged. Trial port keeps
+  upstream's F-601 fail-closed shape but feeds it the fallback chain, so
+  the refusal (and its `invalid_hwid` code, mapped to friendly copy in
+  both trial UIs) fires only when nothing stable exists.
+- Capital-V hardening: `extractVersionFromTag` strips leading `v`
+  case-insensitively, and `build.sh` stamps versions from tags with
+  `s/^[vV]//` — a capital V inside the version would break semver
+  parsing in electron-updater's atom matcher and the in-app gates.
 - New `electron/update/updateFeed.ts`: feed constants, `getUpdateFeed()`,
   `extractVersionFromTag()` (handles `<slug>--vX-fhN` catalog tags),
   `isForkCounterUpgrade()` (same-owner rebuild ordering), URL builders;

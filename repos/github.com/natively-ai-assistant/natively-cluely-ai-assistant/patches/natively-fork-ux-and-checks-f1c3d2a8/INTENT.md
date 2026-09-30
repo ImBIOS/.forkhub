@@ -5,7 +5,7 @@ target_repo: github.com/natively-ai-assistant/natively-cluely-ai-assistant
 target_area: [electron/services/calendarPkce.ts, electron/services/CalendarManager.ts, electron/main.ts, src/components/AboutSection.tsx, src/components/ui/ConnectCalendarButton.tsx, electron/services/__tests__/CalendarPkce.test.mjs, electron/services/__tests__/ForkPatch2Sources.test.mjs]
 status: draft
 applied_upstream_pr: none
-version: 1
+version: 2
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -75,6 +75,11 @@ feed/HWID patch independently re-derivable.
 - Release `build.sh` bakes `build.extraMetadata.nativelyGoogleClientId`
   from `NATIVELY_GOOGLE_CLIENT_ID` when set (no shared-workflow change
   needed for local fork releases; CI forwarding is a follow-up).
+- Zero-config default: fork catalog builds fall back to the maintainer's
+  public Desktop client id (gated on the packaged publish owner, so stock
+  checkouts keep the placeholder guard); explicit baked/env configuration
+  always wins. v2 addition — the client id is public by design (PKCE uses
+  no secret).
 - One-time maintainer setup (Google Cloud → Desktop OAuth client with
   `http://localhost:11111/auth/callback`) documented in `build/BUILD.md`.
 - `main.ts`: `manualCheckFallbackPending` flag; updater-reject and

@@ -113,10 +113,10 @@ index b063486..e57ad0c 100644
    }
  
 diff --git a/electron/services/CalendarManager.ts b/electron/services/CalendarManager.ts
-index b280884..7d79ddc 100644
+index b280884..12e1832 100644
 --- a/electron/services/CalendarManager.ts
 +++ b/electron/services/CalendarManager.ts
-@@ -6,10 +6,54 @@ import path from 'path';
+@@ -6,10 +6,85 @@ import path from 'path';
  import { EventEmitter } from 'events';
  
  // Configuration
@@ -136,6 +136,15 @@ index b280884..7d79ddc 100644
 +// stamped from NATIVELY_GOOGLE_CLIENT_ID at package time) or, for dev,
 +// via GOOGLE_CLIENT_ID together with NATIVELY_CALENDAR_DIRECT=1.
 +const GOOGLE_CLIENT_ID_PLACEHOLDER = 'YOUR_CLIENT_ID_HERE';
++
++/**
++ * Public Desktop OAuth client id for the fork's own Google Cloud project
++ * ("Natively ForkHub"). A client ID is a PUBLIC identifier — it ships in
++ * every build and appears in auth URLs by design; the PKCE direct flow
++ * uses no secret, so there is nothing sensitive here.
++ */
++const FORK_DEFAULT_CLIENT_ID =
++  '303200007953-jsb6cjl3vdev3j0pthdkju8v6hm4q5qv.apps.googleusercontent.com';
 +
 +/** Client id baked into the packaged app by the fork's release build (if any). */
 +function readForkGoogleClientId(): string | null {
@@ -167,7 +176,29 @@ index b280884..7d79ddc 100644
 +    if (envId && envId !== GOOGLE_CLIENT_ID_PLACEHOLDER) {
 +        return { clientId: envId, direct: process.env.NATIVELY_CALENDAR_DIRECT === '1' };
 +    }
++    // Fork catalog builds (and only those — gated on the packaged publish
++    // owner, so upstream checkouts keep the placeholder guard) fall back to
++    // the maintainer's public Desktop client, making Connect calendar work
++    // out of the box with zero configuration. Explicit configuration above
++    // always wins.
++    if (isForkCatalogBuild()) return { clientId: FORK_DEFAULT_CLIENT_ID, direct: true };
 +    return { clientId: GOOGLE_CLIENT_ID_PLACEHOLDER, direct: false };
++}
++
++/**
++ * Whether this build updates from a fork catalog rather than upstream.
++ * Determined from the packaged publish config (the same source of truth
++ * the updater feed uses), so stock builds can never take this branch.
++ */
++function isForkCatalogBuild(): boolean {
++    try {
++        // eslint-disable-next-line @typescript-eslint/no-var-requires
++        const { getUpdateFeed, UPSTREAM_OWNER } = require('./update/updateFeed');
++        const feed = getUpdateFeed();
++        return !!feed?.owner && feed.owner !== UPSTREAM_OWNER;
++    } catch {
++        return false;
++    }
 +}
 +
 +// Legacy export kept for any external readers; prefer resolveCalendarClient().
@@ -175,7 +206,7 @@ index b280884..7d79ddc 100644
  const REDIRECT_URI = "http://localhost:11111/auth/callback";
  const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
  const TOKEN_PATH = path.join(app.getPath('userData'), 'calendar_tokens.enc');
-@@ -17,8 +61,8 @@ const TOKEN_PATH = path.join(app.getPath('userData'), 'calendar_tokens.enc');
+@@ -17,8 +92,8 @@ const TOKEN_PATH = path.join(app.getPath('userData'), 'calendar_tokens.enc');
  // (e.g. http://localhost:3000). Trailing slash is stripped to keep route concat clean.
  const NATIVELY_API_URL = (process.env.NATIVELY_API_URL || 'https://api.natively.software').replace(/\/+$/, '');
  
@@ -186,7 +217,7 @@ index b280884..7d79ddc 100644
  }
  
  export interface CalendarAttendee {
-@@ -45,6 +89,10 @@ export class CalendarManager extends EventEmitter {
+@@ -45,6 +120,10 @@ export class CalendarManager extends EventEmitter {
      private expiryDate: number | null = null;
      private isConnected: boolean = false;
      private updateInterval: NodeJS.Timeout | null = null;
@@ -197,7 +228,7 @@ index b280884..7d79ddc 100644
  
      private constructor() {
          super();
-@@ -67,11 +115,23 @@ export class CalendarManager extends EventEmitter {
+@@ -67,11 +146,23 @@ export class CalendarManager extends EventEmitter {
      // =========================================================================
  
      public async startAuthFlow(): Promise<void> {
@@ -224,7 +255,7 @@ index b280884..7d79ddc 100644
          }
  
          return new Promise((resolve, reject) => {
-@@ -151,19 +211,44 @@ export class CalendarManager extends EventEmitter {
+@@ -151,19 +242,44 @@ export class CalendarManager extends EventEmitter {
          return { connected: this.isConnected };
      }
  
@@ -271,7 +302,7 @@ index b280884..7d79ddc 100644
          try {
              // Proxied through natively-api so GOOGLE_CLIENT_SECRET never ships in the desktop app.
              // Fetch (vs. axios) so this call shares the global keep-alive pool with every other
-@@ -234,6 +319,24 @@ export class CalendarManager extends EventEmitter {
+@@ -234,6 +350,24 @@ export class CalendarManager extends EventEmitter {
              throw new Error('No refresh token available');
          }
  
@@ -346,10 +377,10 @@ index 0000000..14b4abb
 +});
 diff --git a/electron/services/__tests__/ForkPatch2Sources.test.mjs b/electron/services/__tests__/ForkPatch2Sources.test.mjs
 new file mode 100644
-index 0000000..c88fcfb
+index 0000000..c2c98a0
 --- /dev/null
 +++ b/electron/services/__tests__/ForkPatch2Sources.test.mjs
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,80 @@
 +// electron/services/__tests__/ForkPatch2Sources.test.mjs
 +//
 +// Source assertions for the second ForkHub patch (calendar direct auth,
@@ -385,6 +416,12 @@ index 0000000..c88fcfb
 +  assert.match(src, /\/api\/calendar\/refresh/);
 +  // No silent misconfiguration: placeholder refuses with a readable error.
 +  assert.match(src, /missing Google client ID/);
++  // Catalog builds fall back to the maintainer's public Desktop client
++  // (gated so stock builds keep the placeholder guard).
++  assert.match(src, /FORK_DEFAULT_CLIENT_ID/);
++  assert.match(src, /apps\.googleusercontent\.com/);
++  assert.match(src, /isForkCatalogBuild/);
++  assert.match(src, /UPSTREAM_OWNER/);
 +});
 +
 +test('calendar: PKCE helpers stay pure (no electron import)', () => {

@@ -383,6 +383,772 @@ index beb09bd5..0e1aa47c 100644
      linuxApplicationsDir,
      appImagePath: config.appImagePath,
      userDataDirName,
+diff --git a/apps/desktop/src/app/DesktopForkHubStateTransfer.test.ts b/apps/desktop/src/app/DesktopForkHubStateTransfer.test.ts
+new file mode 100644
+index 00000000..e83ef84c
+--- /dev/null
++++ b/apps/desktop/src/app/DesktopForkHubStateTransfer.test.ts
+@@ -0,0 +1,286 @@
++import * as NodePath from "@effect/platform-node/NodePath";
++import * as NodeServices from "@effect/platform-node/NodeServices";
++import { assert, describe, it } from "@effect/vitest";
++import * as Effect from "effect/Effect";
++import * as FileSystem from "effect/FileSystem";
++import * as Layer from "effect/Layer";
++
++import * as DesktopConfig from "./DesktopConfig.ts";
++import * as DesktopEnvironment from "./DesktopEnvironment.ts";
++import {
++  applyForkHubStateTransfer,
++  mergeRegistryFile,
++  mergeSettingsFile,
++  parseJsonObject,
++  previewForkHubStateTransfer,
++} from "./DesktopForkHubStateTransfer.ts";
++
++const FORKHUB_VERSION = "0.0.45-nightly.20260930.2468.fh.with-fh.1";
++
++const environmentLayer = (
++  baseDir: string,
++  appVersion: string,
++  env: Record<string, string | undefined>,
++) =>
++  DesktopEnvironment.layer({
++    dirname: "/repo/apps/desktop/src",
++    homeDirectory: baseDir,
++    platform: "linux",
++    processArch: "x64",
++    appVersion,
++    appPath: "/repo",
++    isPackaged: true,
++    resourcesPath: "/missing/resources",
++    runningUnderArm64Translation: false,
++  }).pipe(
++    Layer.provide(
++      Layer.mergeAll(NodeServices.layer, NodePath.layerPosix, DesktopConfig.layerTest(env)),
++    ),
++  );
++
++const withTempHome = <A, E>(
++  effect: Effect.Effect<A, E, DesktopEnvironment.DesktopEnvironment | FileSystem.FileSystem>,
++  options: {
++    readonly appVersion?: string;
++    readonly env?: Record<string, string | undefined> | ((baseDir: string) => Record<string, string | undefined>);
++  } = {},
++) =>
++  Effect.gen(function* () {
++    const fileSystem = yield* FileSystem.FileSystem;
++    const baseDir = yield* fileSystem.makeTempDirectoryScoped({
++      prefix: "t3-forkhub-transfer-test-",
++    });
++    const env = typeof options.env === "function" ? options.env(baseDir) : (options.env ?? {});
++    return yield* effect.pipe(
++      Effect.provide(environmentLayer(baseDir, options.appVersion ?? FORKHUB_VERSION, env)),
++    );
++  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
++
++describe("DesktopForkHubStateTransfer", () => {
++  it("parses JSON objects leniently", () => {
++    assert.deepEqual(parseJsonObject(`{"a":1}`), { a: 1 });
++    assert.isNull(parseJsonObject(`[1,2]`));
++    assert.isNull(parseJsonObject(`not json`));
++    assert.isNull(parseJsonObject(`"str"`));
++  });
++
++  it("merges settings with the source winning except update identity", () => {
++    const { merged, changedKeys } = mergeSettingsFile(
++      { theme: "dark", forkhubOwner: null, updateChannel: "latest", extra: 1 },
++      { theme: "light", forkhubOwner: "with-fh", updateChannel: "nightly", keep: true },
++    );
++    assert.deepEqual(merged, {
++      theme: "dark",
++      forkhubOwner: "with-fh",
++      updateChannel: "nightly",
++      keep: true,
++      extra: 1,
++    });
++    assert.deepEqual(changedKeys, ["theme", "extra"]);
++  });
++
++  it("drops update identity the source introduces", () => {
++    const { merged } = mergeSettingsFile({ forkhubOwner: "evil" }, { theme: "light" });
++    assert.notProperty(merged, "forkhubOwner");
++  });
++
++  it("unions registries by id, strips incoming tokens, keeps local ones", () => {
++    const { merged, added, updated } = mergeRegistryFile(
++      {
++        version: 1,
++        records: [
++          {
++            environmentId: "new",
++            label: "New",
++            httpBaseUrl: "http://a",
++            encryptedBearerToken: "c2VjcmV0",
++          },
++          {
++            environmentId: "shared",
++            label: "Shared",
++            httpBaseUrl: "http://b-new",
++            lastConnectedAt: "source-time",
++          },
++          { environmentId: "same", label: "Same", httpBaseUrl: "http://c" },
++        ],
++      },
++      {
++        version: 1,
++        records: [
++          {
++            environmentId: "shared",
++            label: "Shared",
++            httpBaseUrl: "http://b-old",
++            encryptedBearerToken: "bG9jYWw=",
++            lastConnectedAt: "local-time",
++          },
++          { environmentId: "same", label: "Same", httpBaseUrl: "http://c" },
++          { environmentId: "local-only", label: "Local", httpBaseUrl: "http://d" },
++        ],
++      },
++    );
++    assert.deepEqual(added, ["New"]);
++    assert.deepEqual(updated, ["Shared"]);
++    const records = (merged.records ?? []) as ReadonlyArray<Record<string, unknown>>;
++    assert.equal(records.length, 4);
++    const byId = new Map(records.map((record) => [record.environmentId as string, record]));
++    assert.notProperty(byId.get("new"), "encryptedBearerToken");
++    assert.equal(byId.get("shared")?.httpBaseUrl, "http://b-new");
++    assert.equal(byId.get("shared")?.encryptedBearerToken, "bG9jYWw=");
++    assert.equal(byId.get("shared")?.lastConnectedAt, "local-time");
++    assert.isTrue(byId.has("local-only"));
++  });
++
++  it.effect("previews an import without writing anything", () =>
++    withTempHome(
++      Effect.gen(function* () {
++        const environment = yield* DesktopEnvironment.DesktopEnvironment;
++        const fileSystem = yield* FileSystem.FileSystem;
++        const join = environment.path.join;
++        const stockDir = join(environment.homeDirectory, ".t3", "userdata");
++        yield* fileSystem.makeDirectory(stockDir, { recursive: true });
++        yield* fileSystem.writeFileString(
++          join(stockDir, "desktop-settings.json"),
++          JSON.stringify({ theme: "dark" }),
++        );
++        yield* fileSystem.writeFileString(join(stockDir, "bogus.json"), `not json {{{`);
++
++        const preview = yield* previewForkHubStateTransfer("import");
++
++        assert.isTrue(preview.otherHomeFound);
++        assert.equal(
++          preview.files.find((file) => file.file === "desktop-settings.json")?.status,
++          "new",
++        );
++        assert.equal(
++          preview.files.find((file) => file.file === "client-settings.json")?.status,
++          "missing-source",
++        );
++        // Fork home untouched by a preview.
++        assert.isFalse(yield* fileSystem.exists(environment.desktopSettingsPath));
++      }),
++    ),
++  );
++
++  it.effect("reports a missing stock home on import", () =>
++    withTempHome(
++      Effect.gen(function* () {
++        const preview = yield* previewForkHubStateTransfer("import");
++        assert.isFalse(preview.otherHomeFound);
++      }),
++    ),
++  );
++
++  it.effect("imports prefs, preserves updater identity, and backs up", () =>
++    withTempHome(
++      Effect.gen(function* () {
++        const environment = yield* DesktopEnvironment.DesktopEnvironment;
++        const fileSystem = yield* FileSystem.FileSystem;
++        const join = environment.path.join;
++        const stockDir = join(environment.homeDirectory, ".t3", "userdata");
++        yield* fileSystem.makeDirectory(stockDir, { recursive: true });
++        yield* fileSystem.writeFileString(
++          join(stockDir, "desktop-settings.json"),
++          JSON.stringify({ theme: "dark", forkhubOwner: null, updateChannel: "latest" }),
++        );
++        yield* fileSystem.writeFileString(
++          join(stockDir, "saved-environments.json"),
++          JSON.stringify({
++            version: 1,
++            records: [
++              {
++                environmentId: "prod",
++                label: "Prod",
++                httpBaseUrl: "http://127.0.0.1:3773",
++                encryptedBearerToken: "c2VjcmV0",
++              },
++            ],
++          }),
++        );
++        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
++        yield* fileSystem.writeFileString(
++          environment.desktopSettingsPath,
++          JSON.stringify({ theme: "light", forkhubOwner: "with-fh", updateChannel: "nightly" }),
++        );
++
++        const result = yield* applyForkHubStateTransfer("import");
++
++        assert.isTrue(result.applied);
++        assert.equal(result.errors.length, 0);
++        assert.equal(result.backups.length, 1);
++        const settings = JSON.parse(
++          yield* fileSystem.readFileString(environment.desktopSettingsPath),
++        ) as Record<string, unknown>;
++        assert.equal(settings.theme, "dark");
++        assert.equal(settings.forkhubOwner, "with-fh");
++        assert.equal(settings.updateChannel, "nightly");
++        const registry = JSON.parse(
++          yield* fileSystem.readFileString(join(environment.stateDir, "saved-environments.json")),
++        ) as { records: ReadonlyArray<Record<string, unknown>> };
++        assert.equal(registry.records.length, 1);
++        assert.notProperty(registry.records[0], "encryptedBearerToken");
++        assert.equal(result.addedEnvironmentsTotal, 1);
++
++        // Second run is a no-op: everything already in sync.
++        const again = yield* applyForkHubStateTransfer("import");
++        assert.isFalse(again.applied);
++        assert.equal(again.backups.length, 0);
++      }),
++    ),
++  );
++
++  it.effect("exports without leaking ForkHub identity into stock", () =>
++    withTempHome(
++      Effect.gen(function* () {
++        const environment = yield* DesktopEnvironment.DesktopEnvironment;
++        const fileSystem = yield* FileSystem.FileSystem;
++        const join = environment.path.join;
++        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
++        yield* fileSystem.writeFileString(
++          environment.desktopSettingsPath,
++          JSON.stringify({ theme: "dark", forkhubOwner: "with-fh", updateChannel: "nightly" }),
++        );
++
++        const result = yield* applyForkHubStateTransfer("export");
++
++        assert.isTrue(result.applied);
++        const stockDir = join(environment.homeDirectory, ".t3", "userdata");
++        const exported = JSON.parse(
++          yield* fileSystem.readFileString(join(stockDir, "desktop-settings.json")),
++        ) as Record<string, unknown>;
++        assert.equal(exported.theme, "dark");
++        assert.notProperty(exported, "forkhubOwner");
++        assert.notProperty(exported, "updateChannel");
++      }),
++    ),
++  );
++
++  it.effect("refuses transfer on stock builds and explicit homes", () =>
++    withTempHome(
++      Effect.gen(function* () {
++        const stockFailed = yield* previewForkHubStateTransfer("import").pipe(
++          Effect.flip,
++          Effect.map((error) => String(error)),
++        );
++        assert.include(stockFailed, "only available on ForkHub");
++      }),
++      { appVersion: "0.0.45-nightly.20260930.2468" },
++    ),
++  );
++
++  it.effect("refuses transfer under an explicit T3CODE_HOME", () =>
++    withTempHome(
++      Effect.gen(function* () {
++        assert.isFalse((yield* DesktopEnvironment.DesktopEnvironment).isImplicitHome);
++        const failed = yield* previewForkHubStateTransfer("export").pipe(
++          Effect.flip,
++          Effect.map((error) => String(error)),
++        );
++        assert.include(failed, "default home");
++      }),
++      {
++        env: (baseDir) => ({ T3CODE_HOME: `${baseDir}/custom-home` }),
++      },
++    ),
++  );
++});
+diff --git a/apps/desktop/src/app/DesktopForkHubStateTransfer.ts b/apps/desktop/src/app/DesktopForkHubStateTransfer.ts
+new file mode 100644
+index 00000000..9433cde8
+--- /dev/null
++++ b/apps/desktop/src/app/DesktopForkHubStateTransfer.ts
+@@ -0,0 +1,468 @@
++import {
++  type ForkHubStateTransferDirection,
++  type ForkHubStateTransferFilePreview,
++  type ForkHubStateTransferPreview,
++  type ForkHubStateTransferResult,
++} from "@t3tools/contracts";
++import * as Effect from "effect/Effect";
++import * as FileSystem from "effect/FileSystem";
++
++import { isForkHubDerivedVersion } from "../updates/updateChannels.ts";
++import * as DesktopEnvironment from "./DesktopEnvironment.ts";
++
++// User-driven state moves between the stock home (`~/.t3/userdata`) and the
++// ForkHub home (`~/.t3-forkhub/userdata`), surfaced in Settings > General >
++// About on ForkHub builds. Same user-data-only file set as the first-boot
++// import: UI prefs plus the saved-environment registry. Backend identity,
++// credentials, and server settings never move — two backends must never
++// share an identity, and bearer tokens are encrypted per install, so moved
++// environments arrive logged-out and reconnect with one deliberate click.
++// Update identity (track, publisher, trains) always stays put on the
++// destination: a move must never repoint either install's updater.
++const TRANSFERABLE_STATE_FILES = [
++  "desktop-settings.json",
++  "client-settings.json",
++  "saved-environments.json",
++] as const;
++
++type TransferableStateFile = (typeof TRANSFERABLE_STATE_FILES)[number];
++
++const REGISTRY_FILE: TransferableStateFile = "saved-environments.json";
++
++// desktop-settings.json keys that belong to the updater, not the user. They
++// are reported as untouched and forced back after every merge, in both
++// directions — importing stock state must not blank the ForkHub publisher,
++// exporting must not leak it into the stock install.
++const PROTECTED_UPDATE_KEYS = [
++  "updateChannel",
++  "updateChannelConfiguredByUser",
++  "forkhubOwner",
++  "forkhubRepo",
++  "forkhubHasStableTrain",
++  "forkhubHasNightlyTrain",
++] as const;
++
++const PREVIEW_LIST_CAP = 10;
++
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++export function parseJsonObject(raw: string): Record<string, unknown> | null {
++  try {
++    const parsed: unknown = JSON.parse(raw);
++    return isPlainObject(parsed) ? parsed : null;
++  } catch {
++    return null;
++  }
++}
++
++function stableStringify(value: unknown): string {
++  return JSON.stringify(value);
++}
++
++export function mergeSettingsFile(
++  source: Record<string, unknown>,
++  target: Record<string, unknown>,
++): { readonly merged: Record<string, unknown>; readonly changedKeys: ReadonlyArray<string> } {
++  const merged: Record<string, unknown> = { ...target };
++  const changedKeys: Array<string> = [];
++  for (const [key, value] of Object.entries(source)) {
++    if ((PROTECTED_UPDATE_KEYS as ReadonlyArray<string>).includes(key)) {
++      continue;
++    }
++    if (stableStringify(target[key]) !== stableStringify(value)) {
++      merged[key] = value;
++      changedKeys.push(key);
++    }
++  }
++  // The destination's updater identity survives even when the source file
++  // predates those keys (then there is simply nothing to restore).
++  for (const key of PROTECTED_UPDATE_KEYS) {
++    if (key in target) {
++      merged[key] = target[key];
++    } else {
++      delete merged[key];
++    }
++  }
++  return { merged, changedKeys };
++}
++
++interface RegistryRecord {
++  readonly environmentId: string;
++  readonly label: string;
++  readonly fields: Record<string, unknown>;
++}
++
++function toRegistryRecord(value: unknown): RegistryRecord | null {
++  if (!isPlainObject(value) || typeof value.environmentId !== "string") {
++    return null;
++  }
++  const { environmentId, label, ...fields } = value;
++  return {
++    environmentId,
++    label: typeof label === "string" ? label : value.environmentId,
++    fields,
++  };
++}
++
++function recordContentEquals(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
++  // Tokens and timestamps are per-install bookkeeping, never content:
++  // encryptedBearerToken cannot cross installs (per-install safeStorage
++  // key), lastConnectedAt/createdAt just describe local history.
++  const ignored = new Set(["encryptedBearerToken", "lastConnectedAt", "createdAt"]);
++  const strip = (record: Record<string, unknown>): Record<string, unknown> =>
++    Object.fromEntries(Object.entries(record).filter(([key]) => !ignored.has(key)));
++  return stableStringify(strip(a)) === stableStringify(strip(b));
++}
++
++export function mergeRegistryFile(
++  source: Record<string, unknown>,
++  target: Record<string, unknown>,
++): {
++  readonly merged: Record<string, unknown>;
++  readonly added: ReadonlyArray<string>;
++  readonly updated: ReadonlyArray<string>;
++} {
++  const sourceRecords = Array.isArray(source.records) ? source.records : [];
++  const targetRecords = Array.isArray(target.records) ? target.records : [];
++  const byId = new Map<string, RegistryRecord>();
++  for (const record of targetRecords) {
++    const parsed = toRegistryRecord(record);
++    if (parsed) byId.set(parsed.environmentId, parsed);
++  }
++  const added: Array<string> = [];
++  const updated: Array<string> = [];
++  for (const record of sourceRecords) {
++    const incoming = toRegistryRecord(record);
++    if (!incoming) {
++      continue;
++    }
++    const { encryptedBearerToken: _dropped, ...portableFields } = incoming.fields;
++    const existing = byId.get(incoming.environmentId);
++    if (!existing) {
++      byId.set(incoming.environmentId, { ...incoming, fields: portableFields });
++      added.push(incoming.label);
++      continue;
++    }
++    if (!recordContentEquals(incoming.fields, existing.fields)) {
++      // Incoming content wins, but the destination keeps its own token and
++      // timestamps — the moved record reconnects with one click instead of
++      // arriving with a dead credential.
++      byId.set(incoming.environmentId, {
++        ...incoming,
++        fields: {
++          ...portableFields,
++          ...(typeof existing.fields.encryptedBearerToken === "string"
++            ? { encryptedBearerToken: existing.fields.encryptedBearerToken }
++            : {}),
++          ...(existing.fields.lastConnectedAt !== undefined
++            ? { lastConnectedAt: existing.fields.lastConnectedAt }
++            : {}),
++          ...(existing.fields.createdAt !== undefined
++            ? { createdAt: existing.fields.createdAt }
++            : {}),
++        },
++      });
++      updated.push(incoming.label);
++    }
++  }
++  return {
++    merged: {
++      ...target,
++      ...(source.version !== undefined ? { version: source.version } : {}),
++      records: [...byId.values()].map((record) => ({
++        environmentId: record.environmentId,
++        label: record.label,
++        ...record.fields,
++      })),
++    },
++    added,
++    updated,
++  };
++}
++
++function capList(values: ReadonlyArray<string>): ReadonlyArray<string> {
++  return values.slice(0, PREVIEW_LIST_CAP);
++}
++
++interface MergedFile {
++  readonly doc: Record<string, unknown>;
++  readonly addedEnvironments: ReadonlyArray<string>;
++  readonly updatedEnvironments: ReadonlyArray<string>;
++  readonly changedKeys: ReadonlyArray<string>;
++}
++
++function mergeTransferFile(
++  file: TransferableStateFile,
++  source: Record<string, unknown>,
++  target: Record<string, unknown>,
++): MergedFile {
++  if (file === REGISTRY_FILE) {
++    const merged = mergeRegistryFile(source, target);
++    return {
++      doc: merged.merged,
++      addedEnvironments: merged.added,
++      updatedEnvironments: merged.updated,
++      changedKeys: [],
++    };
++  }
++  const merged = mergeSettingsFile(source, target);
++  return { doc: merged.merged, addedEnvironments: [], updatedEnvironments: [], changedKeys: merged.changedKeys };
++}
++
++function resolveTransferDirs(
++  environment: {
++    readonly path: { readonly join: (...parts: ReadonlyArray<string>) => string };
++    readonly homeDirectory: string;
++    readonly stateDir: string;
++  },
++  direction: ForkHubStateTransferDirection,
++): { readonly sourceDir: string; readonly targetDir: string } {
++  const join = environment.path.join;
++  const stockDir = join(environment.homeDirectory, ".t3", "userdata");
++  // This install's live state dir is authoritative for whichever side we
++  // currently are; the stock home is canonical on disk.
++  if (direction === "import") {
++    return { sourceDir: stockDir, targetDir: environment.stateDir };
++  }
++  return { sourceDir: environment.stateDir, targetDir: stockDir };
++}
++
++type SourceFileRead =
++  | { readonly status: "missing" }
++  | { readonly status: "unreadable" }
++  | { readonly status: "ok"; readonly raw: string };
++
++function emptyPreview(file: TransferableStateFile): ForkHubStateTransferFilePreview {
++  return {
++    file,
++    status: "missing-source",
++    addedEnvironments: [],
++    addedEnvironmentsTotal: 0,
++    updatedEnvironments: [],
++    updatedEnvironmentsTotal: 0,
++    changedKeys: [],
++    changedKeysTotal: 0,
++    note: null,
++  };
++}
++
++function previewFile(
++  file: TransferableStateFile,
++  source: SourceFileRead,
++  targetRaw: string | null,
++): ForkHubStateTransferFilePreview {
++  const empty = emptyPreview(file);
++  if (source.status === "missing") {
++    return empty;
++  }
++  if (source.status === "unreadable") {
++    return { ...empty, status: "unreadable", note: "Could not parse this file — it will be skipped." };
++  }
++  const sourceDoc = parseJsonObject(source.raw);
++  if (!sourceDoc) {
++    return { ...empty, status: "unreadable", note: "Could not parse this file — it will be skipped." };
++  }
++  if (targetRaw === null) {
++    if (file === REGISTRY_FILE) {
++      const merged = mergeRegistryFile(sourceDoc, {});
++      return {
++        ...empty,
++        status: "new",
++        addedEnvironments: capList(merged.added),
++        addedEnvironmentsTotal: merged.added.length,
++        note: "Saved environments arrive logged-out and reconnect with one click.",
++      };
++    }
++    const merged = mergeSettingsFile(sourceDoc, {});
++    return {
++      ...empty,
++      status: "new",
++      changedKeys: capList(merged.changedKeys),
++      changedKeysTotal: merged.changedKeys.length,
++    };
++  }
++  if (!parseJsonObject(targetRaw)) {
++    return { ...empty, status: "unreadable", note: "Could not parse the destination file." };
++  }
++  const targetDoc = parseJsonObject(targetRaw) as Record<string, unknown>;
++  if (file === REGISTRY_FILE) {
++    const merged = mergeRegistryFile(sourceDoc, targetDoc);
++    if (merged.added.length === 0 && merged.updated.length === 0) {
++      return { ...empty, status: "identical" };
++    }
++    return {
++      ...empty,
++      status: "updated",
++      addedEnvironments: capList(merged.added),
++      addedEnvironmentsTotal: merged.added.length,
++      updatedEnvironments: capList(merged.updated),
++      updatedEnvironmentsTotal: merged.updated.length,
++      note: "Moved environments arrive logged-out and reconnect with one click.",
++    };
++  }
++  const merged = mergeSettingsFile(sourceDoc, targetDoc);
++  if (merged.changedKeys.length === 0) {
++    return { ...empty, status: "identical" };
++  }
++  return {
++    ...empty,
++    status: "updated",
++    changedKeys: capList(merged.changedKeys),
++    changedKeysTotal: merged.changedKeys.length,
++  };
++}
++
++function readSourceFile(
++  fileSystem: FileSystem.FileSystem,
++  path: string,
++): Effect.Effect<SourceFileRead, never, never> {
++  return fileSystem.readFileString(path).pipe(
++    Effect.map((raw): SourceFileRead => ({ status: "ok", raw })),
++    Effect.catch((error) =>
++      Effect.succeed<SourceFileRead>(
++        error.reason._tag === "NotFound" ? { status: "missing" } : { status: "unreadable" },
++      ),
++    ),
++  );
++}
++
++function readTargetFile(
++  fileSystem: FileSystem.FileSystem,
++  path: string,
++): Effect.Effect<string | null, never, never> {
++  return fileSystem.readFileString(path).pipe(Effect.catch(() => Effect.succeed(null as string | null)));
++}
++
++function requireTransferAccess(environment: {
++  readonly appVersion: string;
++  readonly isImplicitHome: boolean;
++}): Effect.Effect<void, Error> {
++  if (!isForkHubDerivedVersion(environment.appVersion) || !environment.isImplicitHome) {
++    return Effect.fail(
++      new Error("State transfer is only available on ForkHub installs with a default home."),
++    );
++  }
++  return Effect.void;
++}
++
++export const previewForkHubStateTransfer = (direction: ForkHubStateTransferDirection) =>
++  Effect.gen(function* () {
++    const environment = yield* DesktopEnvironment.DesktopEnvironment;
++    const fileSystem = yield* FileSystem.FileSystem;
++    yield* requireTransferAccess(environment);
++    const { sourceDir, targetDir } = resolveTransferDirs(environment, direction);
++    const join = environment.path.join;
++    const otherHomeFound = yield* fileSystem
++      .exists(sourceDir)
++      .pipe(Effect.catch(() => Effect.succeed(false)));
++    const files: Array<ForkHubStateTransferFilePreview> = [];
++    for (const file of TRANSFERABLE_STATE_FILES) {
++      const source = yield* readSourceFile(fileSystem, join(sourceDir, file));
++      const targetRaw = yield* readTargetFile(fileSystem, join(targetDir, file));
++      files.push(previewFile(file, source, targetRaw));
++    }
++    return { direction, otherHomeFound, files };
++  });
++
++function backupName(file: string): string {
++  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
++  return `${file}.bak-${stamp}`;
++}
++
++export const applyForkHubStateTransfer = (direction: ForkHubStateTransferDirection) =>
++  Effect.gen(function* () {
++    const environment = yield* DesktopEnvironment.DesktopEnvironment;
++    const fileSystem = yield* FileSystem.FileSystem;
++    yield* requireTransferAccess(environment);
++    const join = environment.path.join;
++    const { sourceDir, targetDir } = resolveTransferDirs(environment, direction);
++    const otherHomeFound = yield* fileSystem
++      .exists(sourceDir)
++      .pipe(Effect.catch(() => Effect.succeed(false)));
++    if (!otherHomeFound) {
++      return yield* Effect.fail(new Error("The other install's home was not found."));
++    }
++    const backups: Array<string> = [];
++    const errors: Array<string> = [];
++    let addedEnvironmentsTotal = 0;
++    let updatedEnvironmentsTotal = 0;
++    let changedKeysTotal = 0;
++    let written = 0;
++    for (const file of TRANSFERABLE_STATE_FILES) {
++      const source = yield* readSourceFile(fileSystem, join(sourceDir, file));
++      if (source.status === "missing") {
++        continue;
++      }
++      if (source.status === "unreadable") {
++        errors.push(`${file}: could not parse the source file, skipped.`);
++        continue;
++      }
++      const sourceDoc = parseJsonObject(source.raw);
++      if (!sourceDoc) {
++        errors.push(`${file}: could not parse the source file, skipped.`);
++        continue;
++      }
++      const targetRaw = yield* readTargetFile(fileSystem, join(targetDir, file));
++      const targetDoc = targetRaw === null ? {} : parseJsonObject(targetRaw);
++      if (targetDoc === null) {
++        errors.push(`${file}: could not parse the destination file, skipped.`);
++        continue;
++      }
++      const merged = mergeTransferFile(file, sourceDoc, targetDoc);
++      const hasChanges =
++        merged.addedEnvironments.length + merged.updatedEnvironments.length > 0 ||
++        merged.changedKeys.length > 0 ||
++        targetRaw === null;
++      if (!hasChanges) {
++        continue;
++      }
++      addedEnvironmentsTotal += merged.addedEnvironments.length;
++      updatedEnvironmentsTotal += merged.updatedEnvironments.length;
++      changedKeysTotal += merged.changedKeys.length;
++      // Back up the destination before the first write to it.
++      if (targetRaw !== null) {
++        const backup = backupName(file);
++        const backedUp = yield* fileSystem.writeFileString(join(targetDir, backup), targetRaw).pipe(
++          Effect.as(true),
++          Effect.catch(() => Effect.succeed(false)),
++        );
++        if (backedUp) {
++          backups.push(backup);
++        }
++      }
++      const wrote = yield* fileSystem
++        .makeDirectory(targetDir, { recursive: true })
++        .pipe(
++          Effect.andThen(
++            fileSystem.writeFileString(join(targetDir, file), `${JSON.stringify(merged.doc, null, 2)}\n`),
++          ),
++          Effect.as(true),
++          Effect.catch((cause) => {
++            errors.push(`${file}: could not write (${String(cause)}).`);
++            return Effect.succeed(false);
++          }),
++        );
++      if (wrote) {
++        written += 1;
++      }
++    }
++    const which = direction === "import" ? "Import" : "Export";
++    const message =
++      errors.length > 0
++        ? `${which} finished with ${errors.length} problem${errors.length === 1 ? "" : "s"}: ${errors.join(" ")}`
++        : written === 0
++          ? "Everything is already in sync — nothing to move."
++          : `${which} moved ${written} file${written === 1 ? "" : "s"}. Quit and reopen T3 Code to apply.`;
++    return {
++      direction,
++      applied: written > 0,
++      backups,
++      addedEnvironmentsTotal,
++      updatedEnvironmentsTotal,
++      changedKeysTotal,
++      errors,
++      message,
++    };
++  });
 diff --git a/apps/desktop/src/app/DesktopForkHubStockImport.test.ts b/apps/desktop/src/app/DesktopForkHubStockImport.test.ts
 new file mode 100644
 index 00000000..cf6d18eb
@@ -742,37 +1508,93 @@ index 0914167c..4efc8f9d 100644
        setWslDistro: () => Effect.die("unexpected WSL distro change"),
        setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
 diff --git a/apps/desktop/src/ipc/DesktopIpcHandlers.ts b/apps/desktop/src/ipc/DesktopIpcHandlers.ts
-index 4b43cd0e..83c75b38 100644
+index 4b43cd0e..3fc9f798 100644
 --- a/apps/desktop/src/ipc/DesktopIpcHandlers.ts
 +++ b/apps/desktop/src/ipc/DesktopIpcHandlers.ts
-@@ -35,6 +35,7 @@ import {
+@@ -35,8 +35,13 @@ import {
    downloadUpdate,
    getUpdateState,
    installUpdate,
 +  setForkHubOwner,
    setUpdateChannel,
  } from "./methods/updates.ts";
++import {
++  applyForkHubStateTransfer,
++  previewForkHubStateTransfer,
++} from "./methods/forkHubStateTransfer.ts";
  import {
-@@ -140,6 +141,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
+   getAppBranding,
+   getLocalEnvironmentBootstraps,
+@@ -140,6 +145,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
    yield* ipc.handle(probeRemoteEditors);
    yield* ipc.handle(getUpdateState);
    yield* ipc.handle(setUpdateChannel);
 +  yield* ipc.handle(setForkHubOwner);
++  yield* ipc.handle(previewForkHubStateTransfer);
++  yield* ipc.handle(applyForkHubStateTransfer);
    yield* ipc.handle(downloadUpdate);
    yield* ipc.handle(installUpdate);
    yield* ipc.handle(checkForUpdate);
 diff --git a/apps/desktop/src/ipc/channels.ts b/apps/desktop/src/ipc/channels.ts
-index 151cd633..89e21096 100644
+index 151cd633..541dacf5 100644
 --- a/apps/desktop/src/ipc/channels.ts
 +++ b/apps/desktop/src/ipc/channels.ts
-@@ -20,6 +20,7 @@ export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-re
+@@ -20,6 +20,9 @@ export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-re
  export const UPDATE_STATE_CHANNEL = "desktop:update-state";
  export const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
  export const UPDATE_SET_CHANNEL_CHANNEL = "desktop:update-set-channel";
 +export const UPDATE_SET_FORKHUB_OWNER_CHANNEL = "desktop:update-set-forkhub-owner";
++export const FORKHUB_STATE_TRANSFER_PREVIEW_CHANNEL = "desktop:forkhub-state-transfer-preview";
++export const FORKHUB_STATE_TRANSFER_APPLY_CHANNEL = "desktop:forkhub-state-transfer-apply";
  export const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
  export const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
  export const UPDATE_CHECK_CHANNEL = "desktop:update-check";
+diff --git a/apps/desktop/src/ipc/methods/forkHubStateTransfer.ts b/apps/desktop/src/ipc/methods/forkHubStateTransfer.ts
+new file mode 100644
+index 00000000..28d495a0
+--- /dev/null
++++ b/apps/desktop/src/ipc/methods/forkHubStateTransfer.ts
+@@ -0,0 +1,40 @@
++import {
++  ForkHubStateTransferDirectionSchema,
++  ForkHubStateTransferPreviewSchema,
++  ForkHubStateTransferResultSchema,
++} from "@t3tools/contracts";
++import * as Effect from "effect/Effect";
++import * as Schema from "effect/Schema";
++
++import {
++  applyForkHubStateTransfer as applyTransfer,
++  previewForkHubStateTransfer as previewTransfer,
++} from "../../app/DesktopForkHubStateTransfer.ts";
++import * as IpcChannels from "../channels.ts";
++import * as DesktopIpc from "../DesktopIpc.ts";
++
++const ForkHubStateTransferDirectionInputSchema = Schema.Struct({
++  direction: ForkHubStateTransferDirectionSchema,
++});
++
++export const previewForkHubStateTransfer = DesktopIpc.makeIpcMethod({
++  channel: IpcChannels.FORKHUB_STATE_TRANSFER_PREVIEW_CHANNEL,
++  payload: ForkHubStateTransferDirectionInputSchema,
++  result: ForkHubStateTransferPreviewSchema,
++  handler: Effect.fn("desktop.ipc.forkhubStateTransfer.preview")(function* (
++    input: typeof ForkHubStateTransferDirectionInputSchema.Type,
++  ) {
++    return yield* previewTransfer(input.direction);
++  }),
++});
++
++export const applyForkHubStateTransfer = DesktopIpc.makeIpcMethod({
++  channel: IpcChannels.FORKHUB_STATE_TRANSFER_APPLY_CHANNEL,
++  payload: ForkHubStateTransferDirectionInputSchema,
++  result: ForkHubStateTransferResultSchema,
++  handler: Effect.fn("desktop.ipc.forkhubStateTransfer.apply")(function* (
++    input: typeof ForkHubStateTransferDirectionInputSchema.Type,
++  ) {
++    return yield* applyTransfer(input.direction);
++  }),
++});
 diff --git a/apps/desktop/src/ipc/methods/updates.ts b/apps/desktop/src/ipc/methods/updates.ts
 index b2212609..2fb4905b 100644
 --- a/apps/desktop/src/ipc/methods/updates.ts
@@ -806,15 +1628,19 @@ index b2212609..2fb4905b 100644
    channel: IpcChannels.UPDATE_DOWNLOAD_CHANNEL,
    payload: Schema.Void,
 diff --git a/apps/desktop/src/preload.ts b/apps/desktop/src/preload.ts
-index e84a5821..fa9d94f7 100644
+index e84a5821..706f5276 100644
 --- a/apps/desktop/src/preload.ts
 +++ b/apps/desktop/src/preload.ts
-@@ -252,6 +252,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
+@@ -252,6 +252,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
    getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
    setUpdateChannel: (channel) =>
      ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),
 +  setForkHubOwner: (input) =>
 +    ipcRenderer.invoke(IpcChannels.UPDATE_SET_FORKHUB_OWNER_CHANNEL, input),
++  previewForkHubStateTransfer: (input) =>
++    ipcRenderer.invoke(IpcChannels.FORKHUB_STATE_TRANSFER_PREVIEW_CHANNEL, input),
++  applyForkHubStateTransfer: (input) =>
++    ipcRenderer.invoke(IpcChannels.FORKHUB_STATE_TRANSFER_APPLY_CHANNEL, input),
    checkForUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_CHECK_CHANNEL),
    downloadUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_DOWNLOAD_CHANNEL),
    installUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL_CHANNEL),
@@ -3204,10 +4030,20 @@ index 00000000..6dba166c
 +  return { owner, repo, releaseCount: releases.length, latestTag, hasStableTrain, hasNightlyTrain };
 +}
 diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
-index fc5082fc..5f1d106d 100644
+index fc5082fc..890b4a14 100644
 --- a/apps/web/src/components/settings/SettingsPanels.tsx
 +++ b/apps/web/src/components/settings/SettingsPanels.tsx
-@@ -53,10 +53,18 @@ import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../..
+@@ -8,6 +8,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import {
+   type BackgroundActivityProfile,
+   type DesktopUpdateChannel,
++  type ForkHubStateTransferDirection,
++  type ForkHubStateTransferPreview,
++  type ForkHubStateTransferResult,
+   ProviderDriverKind,
+   type ProviderInstanceId,
+   type ScopedThreadRef,
+@@ -53,10 +56,18 @@ import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../..
  import {
    canCheckForUpdate,
    getDesktopUpdateButtonTooltip,
@@ -3226,7 +4062,7 @@ index fc5082fc..5f1d106d 100644
  import { ProviderModelPicker } from "../chat/ProviderModelPicker";
  import { TraitsPicker } from "../chat/TraitsPicker";
  import {
-@@ -276,14 +284,28 @@ function AboutVersionTitle() {
+@@ -276,14 +287,33 @@ function AboutVersionTitle() {
    );
  }
  
@@ -3242,6 +4078,11 @@ index fc5082fc..5f1d106d 100644
    const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
 +  const [forkhubOwnerInput, setForkhubOwnerInput] = useState<string | null>(null);
 +  const [forkhubCheck, setForkhubCheck] = useState<ForkHubCheckStatus>({ status: "idle" });
++  const [transferDirection, setTransferDirection] =
++    useState<ForkHubStateTransferDirection | null>(null);
++  const [transferPreview, setTransferPreview] = useState<ForkHubStateTransferPreview | null>(null);
++  const [transferError, setTransferError] = useState<string | null>(null);
++  const [isTransferBusy, setIsTransferBusy] = useState(false);
  
    const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
    const selectedUpdateChannel = updateState?.channel ?? "latest";
@@ -3255,7 +4096,7 @@ index fc5082fc..5f1d106d 100644
  
    const handleUpdateChannelChange = useCallback(
      (channel: DesktopUpdateChannel) => {
-@@ -304,7 +326,7 @@ function AboutVersionSection() {
+@@ -304,7 +334,7 @@ function AboutVersionSection() {
              stackedThreadToast({
                type: "error",
                title: "Could not change update track",
@@ -3264,7 +4105,7 @@ index fc5082fc..5f1d106d 100644
              }),
            );
          })
-@@ -315,6 +337,44 @@ function AboutVersionSection() {
+@@ -315,6 +345,98 @@ function AboutVersionSection() {
      [selectedUpdateChannel],
    );
  
@@ -3306,10 +4147,64 @@ index fc5082fc..5f1d106d 100644
 +    }
 +  }, [forkhubOwnerValue]);
 +
++  const handleTransferPreview = useCallback(async (direction: ForkHubStateTransferDirection) => {
++    const bridge = window.desktopBridge;
++    if (!bridge || typeof bridge.previewForkHubStateTransfer !== "function") return;
++    setTransferDirection(direction);
++    setTransferPreview(null);
++    setTransferError(null);
++    setIsTransferBusy(true);
++    try {
++      setTransferPreview(await bridge.previewForkHubStateTransfer({ direction }));
++    } catch (error) {
++      setTransferError(
++        error instanceof Error ? error.message : "Could not preview the move.",
++      );
++    } finally {
++      setIsTransferBusy(false);
++    }
++  }, []);
++
++  const handleTransferApply = useCallback(async () => {
++    const bridge = window.desktopBridge;
++    if (!bridge || typeof bridge.applyForkHubStateTransfer !== "function" || !transferDirection) {
++      return;
++    }
++    setIsTransferBusy(true);
++    try {
++      const result: ForkHubStateTransferResult = await bridge.applyForkHubStateTransfer({
++        direction: transferDirection,
++      });
++      setTransferPreview(null);
++      setTransferDirection(null);
++      toastManager.add(
++        stackedThreadToast({
++          type: result.errors.length > 0 ? "error" : "success",
++          title:
++            result.errors.length > 0
++              ? "Move finished with problems"
++              : result.applied
++                ? `Move ${transferDirection === "import" ? "from" : "to"} T3 Code complete`
++                : "Already in sync",
++          description: [
++            result.message,
++            result.backups.length > 0 ? `Backups: ${result.backups.join(", ")}.` : null,
++          ]
++            .filter((part) => part !== null)
++            .join(" "),
++        }),
++      );
++    } catch (error) {
++      setTransferError(error instanceof Error ? error.message : "Could not apply the move.");
++    } finally {
++      setIsTransferBusy(false);
++    }
++  }, [transferDirection]);
++
    const handleButtonClick = useCallback(async () => {
      const bridge = window.desktopBridge;
      if (!bridge) return;
-@@ -444,37 +504,115 @@ function AboutVersionSection() {
+@@ -444,37 +566,223 @@ function AboutVersionSection() {
          }
        />
        {hasDesktopBridge ? (
@@ -3324,10 +4219,6 @@ index fc5082fc..5f1d106d 100644
 -              }}
 -            >
 -              <SelectTrigger
--                size="sm"
--                className="w-full sm:w-40"
--                aria-label="Update track"
--                disabled={isChangingUpdateChannel}
 +        <>
 +          <SettingsRow
 +            title="Update track"
@@ -3342,22 +4233,7 @@ index fc5082fc..5f1d106d 100644
 +                onValueChange={(value) => {
 +                  handleUpdateChannelChange(value as DesktopUpdateChannel);
 +                }}
-               >
--                <SelectValue>
--                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
--                </SelectValue>
--              </SelectTrigger>
--              <SelectPopup align="end" alignItemWithTrigger={false}>
--                <SelectItem hideIndicator value="latest">
--                  Stable
--                </SelectItem>
--                <SelectItem hideIndicator value="nightly">
--                  Nightly
--                </SelectItem>
--              </SelectPopup>
--            </Select>
--          }
--        />
++              >
 +                <SelectTrigger
 +                  size="sm"
 +                  className="w-full sm:w-40"
@@ -3384,6 +4260,7 @@ index fc5082fc..5f1d106d 100644
 +            }
 +          />
 +          {isForkHubBuild ? (
++          <>
 +          <SettingsRow
 +            title="ForkHub publisher"
 +            description={
@@ -3450,6 +4327,131 @@ index fc5082fc..5f1d106d 100644
 +              </div>
 +            }
 +          />
++          <SettingsRow
++            title="Move from T3 Code"
++            description="Copy prefs and saved environments from your stock install into this one."
++            control={
++              <Button
+                 size="sm"
+-                className="w-full sm:w-40"
+-                aria-label="Update track"
+-                disabled={isChangingUpdateChannel}
++                variant="outline"
++                disabled={isTransferBusy}
++                onClick={() => void handleTransferPreview("import")}
+               >
+-                <SelectValue>
+-                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
+-                </SelectValue>
+-              </SelectTrigger>
+-              <SelectPopup align="end" alignItemWithTrigger={false}>
+-                <SelectItem hideIndicator value="latest">
+-                  Stable
+-                </SelectItem>
+-                <SelectItem hideIndicator value="nightly">
+-                  Nightly
+-                </SelectItem>
+-              </SelectPopup>
+-            </Select>
+-          }
+-        />
++                {isTransferBusy && transferDirection === "import" ? "Working…" : "Import…"}
++              </Button>
++            }
++          />
++          <SettingsRow
++            title="Move to T3 Code"
++            description="Copy prefs and saved environments from this install into stock."
++            control={
++              <Button
++                size="sm"
++                variant="outline"
++                disabled={isTransferBusy}
++                onClick={() => void handleTransferPreview("export")}
++              >
++                {isTransferBusy && transferDirection === "export" ? "Working…" : "Export…"}
++              </Button>
++            }
++          />
++          {transferDirection ? (
++            <div className="rounded-lg border border-border p-4">
++              <p className="text-sm font-medium">
++                {transferDirection === "import" ? "Import from T3 Code" : "Export to T3 Code"}
++              </p>
++              {isTransferBusy && !transferPreview ? (
++                <p className="mt-2 text-xs text-muted-foreground">Reading both installs…</p>
++              ) : transferError ? (
++                <p className="mt-2 text-xs text-destructive" role="alert">
++                  {transferError}
++                </p>
++              ) : transferPreview && !transferPreview.otherHomeFound ? (
++                <p className="mt-2 text-xs text-muted-foreground">
++                  No stock install found at ~/.t3 — nothing to move.
++                </p>
++              ) : transferPreview ? (
++                <>
++                  <ul className="mt-2 space-y-1.5">
++                    {transferPreview.files.map((file) => (
++                      <li key={file.file} className="text-xs text-muted-foreground">
++                        <span className="font-mono">{file.file}</span>
++                        {" — "}
++                        {file.status === "identical"
++                          ? "already in sync."
++                          : file.status === "missing-source"
++                            ? "not on the other install, nothing to move."
++                            : file.status === "unreadable"
++                              ? "could not be read, will be skipped."
++                              : file.status === "new"
++                                ? "will be created."
++                                : "will be updated."}{" "}
++                        {file.addedEnvironmentsTotal > 0 || file.updatedEnvironmentsTotal > 0
++                          ? `${file.addedEnvironmentsTotal} new, ${file.updatedEnvironmentsTotal} updated environments${file.addedEnvironments.length > 0 || file.updatedEnvironments.length > 0 ? ` (${[...file.addedEnvironments, ...file.updatedEnvironments.map((label) => `${label} ~`)].join(", ")}${file.addedEnvironmentsTotal + file.updatedEnvironmentsTotal > file.addedEnvironments.length + file.updatedEnvironments.length ? ", …" : ""})` : ""}. `
++                          : null}
++                        {file.changedKeysTotal > 0
++                          ? `${file.changedKeysTotal} setting${file.changedKeysTotal === 1 ? "" : "s"} changed${file.changedKeys.length > 0 ? ` (${file.changedKeys.join(", ")}${file.changedKeysTotal > file.changedKeys.length ? ", …" : ""})` : ""}. `
++                          : null}
++                        {file.note ? <span>{file.note} </span> : null}
++                      </li>
++                    ))}
++                  </ul>
++                  <p className="mt-2 text-xs text-muted-foreground">
++                    Update track &amp; publisher stay untouched, existing files are backed up
++                    first, and moved environments reconnect with one click. Quit and reopen
++                    T3 Code afterwards to apply.
++                  </p>
++                  <div className="mt-3 flex gap-2">
++                    <Button
++                      size="sm"
++                      disabled={
++                        isTransferBusy ||
++                        !transferPreview.files.some(
++                          (file) => file.status === "new" || file.status === "updated",
++                        )
++                      }
++                      onClick={() => void handleTransferApply()}
++                    >
++                      {isTransferBusy
++                        ? "Working…"
++                        : `Confirm ${transferDirection === "import" ? "import" : "export"}`}
++                    </Button>
++                    <Button
++                      size="sm"
++                      variant="outline"
++                      disabled={isTransferBusy}
++                      onClick={() => {
++                        setTransferDirection(null);
++                        setTransferPreview(null);
++                        setTransferError(null);
++                      }}
++                    >
++                      Cancel
++                    </Button>
++                  </div>
++                </>
++              ) : null}
++            </div>
++          ) : null}
++          </>
 +          ) : null}
 +        </>
        ) : selectedHostedAppChannel ? (
@@ -3590,7 +4592,7 @@ index f3e7818e..99d1ec27 100644
    hostArch: "x64",
    appArch: "x64",
 diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
-index 700e5184..ebb3db5f 100644
+index 700e5184..c9bcf9de 100644
 --- a/packages/contracts/src/ipc.ts
 +++ b/packages/contracts/src/ipc.ts
 @@ -105,6 +105,19 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
@@ -3642,7 +4644,58 @@ index 700e5184..ebb3db5f 100644
    currentVersion: Schema.String,
    hostArch: DesktopRuntimeArchSchema,
    appArch: DesktopRuntimeArchSchema,
-@@ -1241,6 +1269,12 @@ export interface DesktopBridge {
+@@ -348,6 +376,50 @@ export const DesktopUpdateCheckResultSchema = Schema.Struct({
+   state: DesktopUpdateStateSchema,
+ });
+ 
++export const ForkHubStateTransferDirectionSchema = Schema.Literals(["import", "export"]);
++export type ForkHubStateTransferDirection = typeof ForkHubStateTransferDirectionSchema.Type;
++
++export const ForkHubStateTransferFileStatusSchema = Schema.Literals([
++  "identical",
++  "new",
++  "updated",
++  "unreadable",
++  "missing-source",
++]);
++export type ForkHubStateTransferFileStatus = typeof ForkHubStateTransferFileStatusSchema.Type;
++
++export const ForkHubStateTransferFilePreviewSchema = Schema.Struct({
++  file: Schema.String,
++  status: ForkHubStateTransferFileStatusSchema,
++  addedEnvironments: Schema.Array(Schema.String),
++  addedEnvironmentsTotal: Schema.Number,
++  updatedEnvironments: Schema.Array(Schema.String),
++  updatedEnvironmentsTotal: Schema.Number,
++  changedKeys: Schema.Array(Schema.String),
++  changedKeysTotal: Schema.Number,
++  note: Schema.NullOr(Schema.String),
++});
++export type ForkHubStateTransferFilePreview = typeof ForkHubStateTransferFilePreviewSchema.Type;
++
++export const ForkHubStateTransferPreviewSchema = Schema.Struct({
++  direction: ForkHubStateTransferDirectionSchema,
++  otherHomeFound: Schema.Boolean,
++  files: Schema.Array(ForkHubStateTransferFilePreviewSchema),
++});
++export type ForkHubStateTransferPreview = typeof ForkHubStateTransferPreviewSchema.Type;
++
++export const ForkHubStateTransferResultSchema = Schema.Struct({
++  direction: ForkHubStateTransferDirectionSchema,
++  applied: Schema.Boolean,
++  backups: Schema.Array(Schema.String),
++  addedEnvironmentsTotal: Schema.Number,
++  updatedEnvironmentsTotal: Schema.Number,
++  changedKeysTotal: Schema.Number,
++  errors: Schema.Array(Schema.String),
++  message: Schema.String,
++});
++export type ForkHubStateTransferResult = typeof ForkHubStateTransferResultSchema.Type;
++
+ // Stable id for the Windows-native primary backend. Desktop side wraps
+ // this with a brand inside DesktopBackendManager; web side keeps it as
+ // a plain string so the env-runtime can compare against it without
+@@ -1241,6 +1313,18 @@ export interface DesktopBridge {
    onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
    getUpdateState: () => Promise<DesktopUpdateState>;
    setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
@@ -3652,6 +4705,12 @@ index 700e5184..ebb3db5f 100644
 +    readonly hasStableTrain?: boolean;
 +    readonly hasNightlyTrain?: boolean;
 +  }) => Promise<DesktopUpdateState>;
++  previewForkHubStateTransfer: (input: {
++    readonly direction: ForkHubStateTransferDirection;
++  }) => Promise<ForkHubStateTransferPreview>;
++  applyForkHubStateTransfer: (input: {
++    readonly direction: ForkHubStateTransferDirection;
++  }) => Promise<ForkHubStateTransferResult>;
    checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
    downloadUpdate: () => Promise<DesktopUpdateActionResult>;
    installUpdate: () => Promise<DesktopUpdateActionResult>;

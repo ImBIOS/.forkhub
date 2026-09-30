@@ -5,7 +5,7 @@ target_repo: github.com/pingdotgg/t3code
 target_area: [packages/contracts/src/ipc.ts, apps/desktop/src/updates/updateChannels.ts, apps/desktop/src/updates/updateMachine.ts, apps/desktop/src/updates/DesktopUpdates.ts, apps/desktop/src/updates/releaseNotes.ts, apps/desktop/src/settings/DesktopAppSettings.ts, apps/desktop/src/ipc/channels.ts, apps/desktop/src/ipc/methods/updates.ts, apps/desktop/src/ipc/DesktopIpcHandlers.ts, apps/desktop/src/preload.ts, apps/web/src/components/forkHub.logic.ts, apps/web/src/components/settings/SettingsPanels.tsx, apps/web/src/components/sidebar/SidebarChrome.tsx, apps/web/src/components/desktopUpdate.logic.ts, apps/web/src/components/desktopUpdate.toast.tsx, apps/mobile/src/components/BrandMark.tsx, scripts/build-desktop-artifact.ts, apps/desktop/src/app/DesktopStatePaths.ts, apps/desktop/src/app/DesktopEnvironment.ts, apps/desktop/src/app/DesktopEarlyElectronStartup.ts, apps/desktop/src/app/DesktopPreReadyPlatform.ts, apps/desktop/src/app/DesktopForkHubStockImport.ts, apps/desktop/src/app/DesktopApp.ts]
 status: applied
 applied_upstream_pr: none
-version: 14
+version: 15
 license: MIT
 author: Imamuzzaki Abu Salam
 last_modified_by: Imamuzzaki Abu Salam
@@ -168,4 +168,13 @@ patched install is never mistaken for stock.
     `T3 Code (with-fh, Nightly) (<version>)` and one glance tells which
     publisher's which train an install follows. Realized against upstream
     `v0.0.45-nightly.20260930.2468` (0fcd5f90).
+12. **Move state with stock T3 Code.** Settings > General > About offers
+    Import (stock home into this install) and Export (this install into
+    stock) on ForkHub builds. Both directions preview per-file outcomes
+    first (new / updated / identical / unreadable / missing, with
+    environment and setting counts), then apply with automatic timestamped
+    backups. Saved environments merge by id with bearer tokens stripped
+    (moved records reconnect with one click, local tokens and timestamps
+    kept); prefs merge with the source winning except update identity,
+    which never moves either way. Still needs a restart to apply.
 

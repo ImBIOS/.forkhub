@@ -87,12 +87,12 @@ jobs:
             DEP_MANIFEST=$(curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/manifest.json")
             DEP_VER=$(printf '%s' "$DEP_MANIFEST" | python3 -c "import json,sys; print(json.load(sys.stdin)['patches']['natively-forkhub-support-f276ae13']['version'])")
             RANGE=$(python3 -c "import json; print(json.load(open('$TDIR/manifest.json'))['patches']['natively-pkg-no-maps-8dedeb5a'].get('depends_on',[{}])[0].get('version',''))")
-            python3 - "$DEP_VER" "$RANGE" <<'PYEOF' || { echo "::error::with-fh support $DEP_VER does not satisfy $RANGE — human decision required (see maps INTENT)"; exit 1; }
-            import sys
+            DEP_VER="$DEP_VER" RANGE="$RANGE" python3 -c '
+            import os, sys
             def tup(v):
-                parts = (str(v).split(".") + ["0", "0", "0"])[:3]
-                return tuple(int(x) for x in parts)
-            ver, rng = tup(sys.argv[1]), sys.argv[2] or ">=0.0.0"
+                return tuple(int(x) for x in ((str(v).split(".") + ["0", "0", "0"])[:3]))
+            ver = tup(os.environ["DEP_VER"])
+            rng = os.environ.get("RANGE") or ">=0.0.0"
             ok = True
             for part in rng.split():
                 if part[:2] in (">=", "<=", "==", "!="):
@@ -100,12 +100,17 @@ jobs:
                 elif part[:1] in (">", "<"):
                     op, want = part[:1], tup(part[1:])
                 else:
-                    print(f"unparseable range part: {part}", file=sys.stderr)
+                    print("unparseable range part:", part, file=sys.stderr)
                     sys.exit(2)
-                ok = ok and {"==": ver == want, "!=": ver != want, ">=": ver >= want, "<=": ver <= want, ">": ver > want, "<": ver < want}[op]
-            print(f"dep {sys.argv[1]} vs '{rng}': {'OK' if ok else 'MISMATCH'}")
+                if op == "==": ok = ok and ver == want
+                elif op == "!=": ok = ok and ver != want
+                elif op == ">=": ok = ok and ver >= want
+                elif op == "<=": ok = ok and ver <= want
+                elif op == ">": ok = ok and ver > want
+                elif op == "<": ok = ok and ver < want
+            print("dep %s vs %s: %s" % (os.environ["DEP_VER"], rng, "OK" if ok else "MISMATCH"))
             sys.exit(0 if ok else 1)
-            PYEOF
+            ' || { echo "::error::with-fh support $DEP_VER does not satisfy $RANGE - human decision required (see maps INTENT)"; exit 1; }
             echo "dependency range satisfied: support $DEP_VER in $RANGE"
             curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/patches/natively-forkhub-support-f276ae13/reference.diff" \
               -o /tmp/withfh-support.diff

@@ -4,5 +4,11 @@
   "upstream_remote": "upstream",
   "fork_url": "git@github.com:ImBIOS/natively-cluely-ai-assistant.git",
   "fork_remote": "origin",
-  "schedule": "on-upstream-release"
+  "schedule": "on-upstream-release",
+  "build_runs_on": [
+    "ubuntu-latest"
+  ],
+  "build_skip_markers": {
+    "linux": "*.AppImage"
+  }
 }

@@ -1,0 +1,14 @@
+{
+  "upstream_url": "https://github.com/deepseek-ai/deepseek-harness.git",
+  "upstream_main_branch": "master",
+  "upstream_remote": "upstream",
+  "fork_url": "git@github.com:ImBIOS/deepseek-harness.git",
+  "fork_remote": "origin",
+  "schedule": "on-upstream-release",
+  "build_runs_on": [
+    "ubuntu-latest"
+  ],
+  "build_skip_markers": {
+    "linux": "*.AppImage"
+  }
+}

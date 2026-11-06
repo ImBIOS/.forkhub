@@ -1,0 +1,36 @@
+{
+  "target_repo": "github.com/deepseek-ai/deepseek-harness",
+  "upstream_main_branch": "master",
+  "upstream_remote": "upstream",
+  "fork_remote": "origin",
+  "is_fork": true,
+  "schedule": "on-upstream-release",
+  "token_budget_per_run": 200000,
+  "on_budget_exceed": "pause",
+  "patches": {
+    "dsh-linux-support-placeholder": {
+      "status": "draft",
+      "version": "0.1.0",
+      "author": "Imamuzzaki Abu Salam",
+      "last_modified_by": "Imamuzzaki Abu Salam",
+      "branch": "dsh/linux-support",
+      "last_realized_against_commit": null,
+      "depends_on": [
+        {
+          "repo": "with-fh/.forkhub",
+          "patch": "dsh-forkhub-support-placeholder",
+          "ref": null,
+          "version": ">=0.1.0 <1.0.0",
+          "note": "PLACEHOLDER ref — pin to the merged with-fh channel commit once the real dsh channel patch lands (same pattern as natively-linux-support depends_on with-fh ae111a3)"
+        }
+      ],
+      "note": "PLACEHOLDER — real INTENT lands via fh draft once the with-fh dsh channel patch has its first release"
+    }
+  },
+  "apply_order": [
+    "dsh-linux-support-placeholder"
+  ],
+  "slug_aliases": {
+    "dsh-linux-support": "dsh-linux-support-placeholder"
+  }
+}

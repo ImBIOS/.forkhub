@@ -1,0 +1,24 @@
+{
+  "$schema": "https://github.com/with-fh/.forkhub/blob/main/registry.schema.json",
+  "packages": {
+    "natively-linux": {
+      "target": "github.com/Natively-AI-assistant/natively-cluely-ai-assistant",
+      "description": "Natively x ForkHub for Linux (AppImage; depends on the with-fh update channel)",
+      "bin": "Natively",
+      "defaultChannel": "stable",
+      "asset": "Natively-{version}.AppImage",
+      "binPaths": {
+        "linux-x64": "{asset}"
+      },
+      "extract": "none",
+      "platforms": [
+        "linux-x64"
+      ],
+      "channels": {
+        "stable": {
+          "tagMatch": "^v[0-9]+\\.[0-9]+\\.[0-9]+-fh\\.imbios\\.[0-9]+$"
+        }
+      }
+    }
+  }
+}

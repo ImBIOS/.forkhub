@@ -19,7 +19,7 @@
         {
           "repo": "with-fh/.forkhub",
           "patch": "natively-forkhub-support-f276ae13",
-          "ref": "fbaad63659f8d8c6441a386a865093828b3a1b29",
+          "ref": "ae111a3ef5629a5ca8112178384c3e5d1d0a015d",
           "version": ">=2.0.0 <3.0.0"
         }
       ]

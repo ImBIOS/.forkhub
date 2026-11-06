@@ -42,14 +42,15 @@ This patch depends on the intent-patch in `with-fh/.forkhub`:
 
 - repo: `with-fh/.forkhub`
 - patch: `natively-forkhub-support-f276ae13`
-- pinned ref: `f797d1a` (re-pin when that patch changes; procedure:
-  point `WITHFH_REF` at the new commit in `forkhub-pr-build.yml` and
-  re-run the full flavor)
+- pinned ref: see `manifest.json` `depends_on[0].ref` (re-pin both
+  entries' `ref` when that patch changes, then re-run the full flavor;
+  the workflow enforces the `version` range and fails loudly on MAJOR
+  mismatch — a human decides, never auto-resolve)
 
-Full ImBIOS builds apply the with-fh support patch FIRST (fetched raw
-at the pinned ref), then this patch (`apply_order` below) — the maps
-hunk lives in `build.files`, the support hunks in `build.publish` and
-elsewhere, so the two never overlap. This patch ALSO applies to stock
+Full ImBIOS builds apply the with-fh channel patch FIRST (fetched raw
+at the pinned ref), then the linux-support patch, then this patch
+(`apply_order` below) — the maps hunk lives in `build.files`, so it
+never overlaps either layer. This patch ALSO applies to stock
 upstream alone (verified both orders), which is what the `pr-only`
 build flavor proves.
 

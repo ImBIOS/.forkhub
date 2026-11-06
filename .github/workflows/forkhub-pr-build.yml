@@ -6,8 +6,9 @@ name: forkhub pr-build
 # comment on the upstream PR linking both:
 #   pr-only — stock upstream + maps intent only (exactly what upstream
 #             would merge; proves the intent is self-contained)
-#   full    — stock + with-fh forkhub-support (pinned ref) + maps intent
-#             (the complete ForkHub-enabled build)
+#   full    — stock + with-fh update-channel (pinned ref) + linux-support
+#             + maps intent, stamped NATIVELY_UPDATE_OWNER=ImBIOS with the
+#             ImBIOS Google OAuth client (the complete ImBIOS Linux build)
 #
 # Required secret: UPSTREAM_COMMENT_TOKEN — a PAT with `public_repo`
 # scope, so this workflow can (create/)update the comment on the
@@ -76,13 +77,14 @@ jobs:
           git clone --depth 1 --branch "${{ steps.tag.outputs.tag }}" \
             https://github.com/Natively-AI-assistant/natively-cluely-ai-assistant.git app
           TDIR="$GITHUB_WORKSPACE/catalog/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant"
+          WITHFH_NATDIR="repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant"
           if [ "${{ matrix.flavor }}" = "full" ]; then
             # Dependency on with-fh/.forkhub (pinned in the maps INTENT):
             # full builds carry the complete ForkHub stack under the maps fix.
             # The pin AND the semver range are enforced — a human decides on
             # range failure (never auto-resolve across a MAJOR).
-            REF=$(grep -oE '`[0-9a-f]{7,40}`' "$TDIR/patches/natively-pkg-no-maps-8dedeb5a/INTENT.md" | head -1 | tr -d '`')
-            [ -n "$REF" ] || { echo "::error::no pinned with-fh ref in maps INTENT"; exit 1; }
+            REF=$(python3 -c "import json; print(json.load(open('$TDIR/manifest.json'))['patches']['natively-pkg-no-maps-8dedeb5a'].get('depends_on',[{}])[0].get('ref',''))")
+            [ -n "$REF" ] || { echo "::error::no pinned with-fh ref in manifest depends_on"; exit 1; }
             echo "full flavor: with-fh support at $REF"
             DEP_MANIFEST=$(curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/manifest.json")
             DEP_VER=$(printf '%s' "$DEP_MANIFEST" | python3 -c "import json,sys; print(json.load(sys.stdin)['patches']['natively-forkhub-support-f276ae13']['version'])")
@@ -116,6 +118,11 @@ jobs:
               -o /tmp/withfh-support.diff
             git -C "$GITHUB_WORKSPACE/app" apply --check /tmp/withfh-support.diff
             git -C "$GITHUB_WORKSPACE/app" apply /tmp/withfh-support.diff
+            # Layer 2: ImBIOS linux-support (applies on top of the channel
+            # patch; order vs maps is irrelevant — disjoint files).
+            LINUX="$TDIR/patches/natively-linux-support-9d3f7a21/reference.diff"
+            git -C "$GITHUB_WORKSPACE/app" apply --check "$LINUX"
+            git -C "$GITHUB_WORKSPACE/app" apply "$LINUX"
           fi
           MAPS="$TDIR/patches/natively-pkg-no-maps-8dedeb5a/reference.diff"
           if ! git -C "$GITHUB_WORKSPACE/app" apply --check "$MAPS"; then
@@ -134,9 +141,16 @@ jobs:
         env:
           ONNXRUNTIME_NODE_INSTALL: skip
           ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+          NATIVELY_UPDATE_OWNER: ${{ (matrix.flavor == 'full' && 'ImBIOS') || '' }}
+          NATIVELY_UPDATE_REPO: ${{ (matrix.flavor == 'full' && '.forkhub') || '' }}
+          NATIVELY_GOOGLE_CLIENT_ID: ${{ (matrix.flavor == 'full' && secrets.NATIVELY_GOOGLE_CLIENT_ID) || '' }}
+          NATIVELY_GOOGLE_CLIENT_SECRET: ${{ (matrix.flavor == 'full' && secrets.NATIVELY_GOOGLE_CLIENT_SECRET) || '' }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/app"
+          if [ "${{ matrix.flavor }}" = "full" ]; then
+            [ -n "${NATIVELY_GOOGLE_CLIENT_SECRET:-}" ] || echo "::warning::NATIVELY_GOOGLE_CLIENT_SECRET not set — calendar will report not-configured (see channel INTENT non-negotiable 7)."
+          fi
           npm ci
           export PATH="$PWD/node_modules/.bin:$PATH"
           if [ "${{ matrix.flavor }}" = "full" ]; then
@@ -152,6 +166,14 @@ jobs:
             # pr-only keeps the stock version: exactly what upstream merges.
             VER=$(printf '%s' "${{ steps.tag.outputs.tag }}" | sed 's/^v//')
             echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
+          fi
+          if [ "${{ matrix.flavor }}" = "full" ]; then
+            # Bake the ImBIOS feed default + OAuth client into the packaged
+            # app (renderer has no env; the channel patch reads baked
+            # extraMetadata first). No-ops when the vars are empty.
+            [ -n "${NATIVELY_UPDATE_OWNER:-}" ] && npm pkg set "build.extraMetadata.forkhubUpdateOwner=$NATIVELY_UPDATE_OWNER" || true
+            [ -n "${NATIVELY_GOOGLE_CLIENT_ID:-}" ] && npm pkg set "build.extraMetadata.nativelyGoogleClientId=$NATIVELY_GOOGLE_CLIENT_ID" || true
+            [ -n "${NATIVELY_GOOGLE_CLIENT_SECRET:-}" ] && npm pkg set "build.extraMetadata.nativelyGoogleClientSecret=$NATIVELY_GOOGLE_CLIENT_SECRET" || true
           fi
           npm run build
           npm run build:electron
@@ -234,7 +256,7 @@ jobs:
               echo "- PR-only: build did not publish (see the run)."
             fi
             if [ -f /tmp/prlinks/full-url.txt ]; then
-              echo "- Full ForkHub (with-fh support + this change): [$(cat /tmp/prlinks/full-tag.txt)]($(cat /tmp/prlinks/full-url.txt))"
+              echo "- Full ForkHub (channel + linux-support + this change): [$(cat /tmp/prlinks/full-tag.txt)]($(cat /tmp/prlinks/full-url.txt))"
             else
               echo "- Full ForkHub: build did not publish (see the run)."
             fi

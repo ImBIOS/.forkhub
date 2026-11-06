@@ -1,19 +1,14 @@
-name: forkhub pr-build
+name: forkhub linux build
 
-# Try-builds for the open upstream PR that carries this catalog's first
-# own intent-patch (Natively PR #661: exclude sourcemaps). Two linux
-# flavors per run, published to THIS repo's releases, with one rolling
-# comment on the upstream PR linking both:
-#   pr-only — stock upstream + maps intent only (exactly what upstream
-#             would merge; proves the intent is self-contained)
-#   full    — stock + with-fh update-channel (pinned ref) + linux-support
-#             + maps intent, stamped NATIVELY_UPDATE_OWNER=ImBIOS with the
-#             ImBIOS Google OAuth client (the complete ImBIOS Linux build)
+# Linux build for the ImBIOS Natively catalog: stock upstream + with-fh
+# update-channel (pinned ref, see manifest depends_on) + linux-support,
+# stamped NATIVELY_UPDATE_OWNER=ImBIOS with the ImBIOS Google OAuth
+# client, packed as AppImage + deb and published to THIS repo's releases.
 #
-# Required secret: UPSTREAM_COMMENT_TOKEN — a PAT with `public_repo`
-# scope, so this workflow can (create/)update the comment on the
-# UPSTREAM repo's PR. Absent: builds still publish; commenting is
-# skipped with a warning (add it in Settings → Secrets → Actions).
+# Required secrets: NATIVELY_GOOGLE_CLIENT_ID / NATIVELY_GOOGLE_CLIENT_SECRET
+# (fork calendar OAuth; without the secret calendar reports not-configured).
+# Absent: build still publishes; calendar step warns (see channel INTENT
+# non-negotiable 7).
 
 on:
   push:
@@ -22,16 +17,12 @@ on:
       - ".github/workflows/forkhub-pr-build.yml"
   workflow_dispatch:
     inputs:
-      pr:
-        description: "Upstream PR number to build for"
-        required: false
-        default: "661"
       tag:
         description: "Upstream tag to build (empty = newest stable)"
         required: false
         default: ""
       force:
-        description: "Rebuild even if the flavor release already exists"
+        description: "Rebuild even if the release already exists"
         required: false
         default: false
         type: boolean
@@ -41,12 +32,12 @@ permissions:
 
 jobs:
   build:
-    name: pr-build ${{ matrix.flavor }} (linux)
+    name: linux build (${{ matrix.flavor }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        flavor: [pr-only, full]
+        flavor: [linux]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -77,59 +68,48 @@ jobs:
           git clone --depth 1 --branch "${{ steps.tag.outputs.tag }}" \
             https://github.com/Natively-AI-assistant/natively-cluely-ai-assistant.git app
           TDIR="$GITHUB_WORKSPACE/catalog/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant"
-          WITHFH_NATDIR="repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant"
-          if [ "${{ matrix.flavor }}" = "full" ]; then
-            # Dependency on with-fh/.forkhub (pinned in the maps INTENT):
-            # full builds carry the complete ForkHub stack under the maps fix.
-            # The pin AND the semver range are enforced — a human decides on
-            # range failure (never auto-resolve across a MAJOR).
-            REF=$(python3 -c "import json; print(json.load(open('$TDIR/manifest.json'))['patches']['natively-pkg-no-maps-8dedeb5a'].get('depends_on',[{}])[0].get('ref',''))")
-            [ -n "$REF" ] || { echo "::error::no pinned with-fh ref in manifest depends_on"; exit 1; }
-            echo "full flavor: with-fh support at $REF"
-            DEP_MANIFEST=$(curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/manifest.json")
-            DEP_VER=$(printf '%s' "$DEP_MANIFEST" | python3 -c "import json,sys; print(json.load(sys.stdin)['patches']['natively-forkhub-support-f276ae13']['version'])")
-            RANGE=$(python3 -c "import json; print(json.load(open('$TDIR/manifest.json'))['patches']['natively-pkg-no-maps-8dedeb5a'].get('depends_on',[{}])[0].get('version',''))")
-            DEP_VER="$DEP_VER" RANGE="$RANGE" python3 -c '
-            import os, sys
-            def tup(v):
-                return tuple(int(x) for x in ((str(v).split(".") + ["0", "0", "0"])[:3]))
-            ver = tup(os.environ["DEP_VER"])
-            rng = os.environ.get("RANGE") or ">=0.0.0"
-            ok = True
-            for part in rng.split():
-                if part[:2] in (">=", "<=", "==", "!="):
-                    op, want = part[:2], tup(part[2:])
-                elif part[:1] in (">", "<"):
-                    op, want = part[:1], tup(part[1:])
-                else:
-                    print("unparseable range part:", part, file=sys.stderr)
-                    sys.exit(2)
-                if op == "==": ok = ok and ver == want
-                elif op == "!=": ok = ok and ver != want
-                elif op == ">=": ok = ok and ver >= want
-                elif op == "<=": ok = ok and ver <= want
-                elif op == ">": ok = ok and ver > want
-                elif op == "<": ok = ok and ver < want
-            print("dep %s vs %s: %s" % (os.environ["DEP_VER"], rng, "OK" if ok else "MISMATCH"))
-            sys.exit(0 if ok else 1)
-            ' || { echo "::error::with-fh support $DEP_VER does not satisfy $RANGE - human decision required (see maps INTENT)"; exit 1; }
-            echo "dependency range satisfied: support $DEP_VER in $RANGE"
-            curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/patches/natively-forkhub-support-f276ae13/reference.diff" \
-              -o /tmp/withfh-support.diff
-            git -C "$GITHUB_WORKSPACE/app" apply --check /tmp/withfh-support.diff
-            git -C "$GITHUB_WORKSPACE/app" apply /tmp/withfh-support.diff
-            # Layer 2: ImBIOS linux-support (applies on top of the channel
-            # patch; order vs maps is irrelevant — disjoint files).
-            LINUX="$TDIR/patches/natively-linux-support-9d3f7a21/reference.diff"
-            git -C "$GITHUB_WORKSPACE/app" apply --check "$LINUX"
-            git -C "$GITHUB_WORKSPACE/app" apply "$LINUX"
-          fi
-          MAPS="$TDIR/patches/natively-pkg-no-maps-8dedeb5a/reference.diff"
-          if ! git -C "$GITHUB_WORKSPACE/app" apply --check "$MAPS"; then
-            echo "::error::maps intent no longer applies — upstream may have merged PR #${{ inputs.pr || '661' }} (retire the patch instead of re-deriving; see INTENT.md)"
-            exit 1
-          fi
-          git -C "$GITHUB_WORKSPACE/app" apply "$MAPS"
+          # Dependency on with-fh/.forkhub (pinned in manifest depends_on):
+          # the pin AND the semver range are enforced — a human decides on
+          # range failure (never auto-resolve across a MAJOR).
+          REF=$(python3 -c "import json; print(json.load(open('$TDIR/manifest.json'))['patches']['natively-linux-support-9d3f7a21'].get('depends_on',[{}])[0].get('ref',''))")
+          [ -n "$REF" ] || { echo "::error::no pinned with-fh ref in manifest depends_on"; exit 1; }
+          echo "with-fh support at $REF"
+          DEP_MANIFEST=$(curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/manifest.json")
+          DEP_VER=$(printf '%s' "$DEP_MANIFEST" | python3 -c "import json,sys; print(json.load(sys.stdin)['patches']['natively-forkhub-support-f276ae13']['version'])")
+          RANGE=$(python3 -c "import json; print(json.load(open('$TDIR/manifest.json'))['patches']['natively-linux-support-9d3f7a21'].get('depends_on',[{}])[0].get('version',''))")
+          DEP_VER="$DEP_VER" RANGE="$RANGE" python3 -c '
+          import os, sys
+          def tup(v):
+              return tuple(int(x) for x in ((str(v).split(".") + ["0", "0", "0"])[:3]))
+          ver = tup(os.environ["DEP_VER"])
+          rng = os.environ.get("RANGE") or ">=0.0.0"
+          ok = True
+          for part in rng.split():
+              if part[:2] in (">=", "<=", "==", "!="):
+                  op, want = part[:2], tup(part[2:])
+              elif part[:1] in (">", "<"):
+                  op, want = part[:1], tup(part[1:])
+              else:
+                  print("unparseable range part:", part, file=sys.stderr)
+                  sys.exit(2)
+              if op == "==": ok = ok and ver == want
+              elif op == "!=": ok = ok and ver != want
+              elif op == ">=": ok = ok and ver >= want
+              elif op == "<=": ok = ok and ver <= want
+              elif op == ">": ok = ok and ver > want
+              elif op == "<": ok = ok and ver < want
+          print("dep %s vs %s: %s" % (os.environ["DEP_VER"], rng, "OK" if ok else "MISMATCH"))
+          sys.exit(0 if ok else 1)
+          ' || { echo "::error::with-fh support $DEP_VER does not satisfy $RANGE - human decision required (see INTENT.md)"; exit 1; }
+          echo "dependency range satisfied: support $DEP_VER in $RANGE"
+          curl -fsSL "https://raw.githubusercontent.com/with-fh/.forkhub/$REF/repos/github.com/natively-ai-assistant/natively-cluely-ai-assistant/patches/natively-forkhub-support-f276ae13/reference.diff" \
+            -o /tmp/withfh-support.diff
+          git -C "$GITHUB_WORKSPACE/app" apply --check /tmp/withfh-support.diff
+          git -C "$GITHUB_WORKSPACE/app" apply /tmp/withfh-support.diff
+          # Layer 2: ImBIOS linux-support (applies on top of the channel patch).
+          LINUX="$TDIR/patches/natively-linux-support-9d3f7a21/reference.diff"
+          git -C "$GITHUB_WORKSPACE/app" apply --check "$LINUX"
+          git -C "$GITHUB_WORKSPACE/app" apply "$LINUX"
 
       - name: Native prerequisites
         run: |
@@ -141,60 +121,48 @@ jobs:
         env:
           ONNXRUNTIME_NODE_INSTALL: skip
           ONNXRUNTIME_NODE_INSTALL_CUDA: skip
-          NATIVELY_UPDATE_OWNER: ${{ (matrix.flavor == 'full' && 'ImBIOS') || '' }}
-          NATIVELY_UPDATE_REPO: ${{ (matrix.flavor == 'full' && '.forkhub') || '' }}
-          NATIVELY_GOOGLE_CLIENT_ID: ${{ (matrix.flavor == 'full' && secrets.NATIVELY_GOOGLE_CLIENT_ID) || '' }}
-          NATIVELY_GOOGLE_CLIENT_SECRET: ${{ (matrix.flavor == 'full' && secrets.NATIVELY_GOOGLE_CLIENT_SECRET) || '' }}
+          NATIVELY_UPDATE_OWNER: ImBIOS
+          NATIVELY_UPDATE_REPO: .forkhub
+          NATIVELY_GOOGLE_CLIENT_ID: ${{ secrets.NATIVELY_GOOGLE_CLIENT_ID }}
+          NATIVELY_GOOGLE_CLIENT_SECRET: ${{ secrets.NATIVELY_GOOGLE_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/app"
-          if [ "${{ matrix.flavor }}" = "full" ]; then
-            [ -n "${NATIVELY_GOOGLE_CLIENT_SECRET:-}" ] || echo "::warning::NATIVELY_GOOGLE_CLIENT_SECRET not set — calendar will report not-configured (see channel INTENT non-negotiable 7)."
-          fi
+          [ -n "${NATIVELY_GOOGLE_CLIENT_SECRET:-}" ] || echo "::warning::NATIVELY_GOOGLE_CLIENT_SECRET not set — calendar will report not-configured (see channel INTENT non-negotiable 7)."
           npm ci
           export PATH="$PWD/node_modules/.bin:$PATH"
-          if [ "${{ matrix.flavor }}" = "full" ]; then
-            # Fork provenance version for the full flavor (distinct owner
-            # suffix — never collides with with-fh's with-fh.N line).
-            BASE=$(printf '%s' "${{ steps.tag.outputs.tag }}" | sed 's/^v//')
-            N=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' \
-              | grep -cE "^v${BASE}-fh\\.imbios\\.[0-9]+\$" || true)
-            VER="${BASE}-fh.imbios.$((N + 1))"
-            npm pkg set "version=$VER"
-            echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
-          else
-            # pr-only keeps the stock version: exactly what upstream merges.
-            VER=$(printf '%s' "${{ steps.tag.outputs.tag }}" | sed 's/^v//')
-            echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
-          fi
-          if [ "${{ matrix.flavor }}" = "full" ]; then
-            # Bake the ImBIOS feed default + OAuth client into the packaged
-            # app (renderer has no env; the channel patch reads baked
-            # extraMetadata first). No-ops when the vars are empty.
-            [ -n "${NATIVELY_UPDATE_OWNER:-}" ] && npm pkg set "build.extraMetadata.forkhubUpdateOwner=$NATIVELY_UPDATE_OWNER" || true
-            [ -n "${NATIVELY_GOOGLE_CLIENT_ID:-}" ] && npm pkg set "build.extraMetadata.nativelyGoogleClientId=$NATIVELY_GOOGLE_CLIENT_ID" || true
-            [ -n "${NATIVELY_GOOGLE_CLIENT_SECRET:-}" ] && npm pkg set "build.extraMetadata.nativelyGoogleClientSecret=$NATIVELY_GOOGLE_CLIENT_SECRET" || true
-          fi
+          # Fork provenance version (distinct owner suffix — never collides
+          # with with-fh's with-fh.N line).
+          BASE=$(printf '%s' "${{ steps.tag.outputs.tag }}" | sed 's/^v//')
+          N=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' \
+            | grep -cE "^v${BASE}-fh\\.imbios\\.[0-9]+\$" || true)
+          VER="${BASE}-fh.imbios.$((N + 1))"
+          npm pkg set "version=$VER"
+          echo "APP_VERSION=$VER" >> "$GITHUB_ENV"
+          # Bake the ImBIOS feed default + OAuth client into the packaged
+          # app (renderer has no env; the channel patch reads baked
+          # extraMetadata first). No-ops when the vars are empty.
+          [ -n "${NATIVELY_UPDATE_OWNER:-}" ] && npm pkg set "build.extraMetadata.forkhubUpdateOwner=$NATIVELY_UPDATE_OWNER" || true
+          [ -n "${NATIVELY_GOOGLE_CLIENT_ID:-}" ] && npm pkg set "build.extraMetadata.nativelyGoogleClientId=$NATIVELY_GOOGLE_CLIENT_ID" || true
+          [ -n "${NATIVELY_GOOGLE_CLIENT_SECRET:-}" ] && npm pkg set "build.extraMetadata.nativelyGoogleClientSecret=$NATIVELY_GOOGLE_CLIENT_SECRET" || true
           npm run build
           npm run build:electron
           npm run build:native || echo "::warning::native module build failed; continuing without it"
           find dist dist-electron node_modules -name '*.map' -delete || true
           ./node_modules/.bin/electron-builder --linux AppImage --publish never
 
-      - name: Publish flavor release
+      - name: Publish linux release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/dist"
           mv "$GITHUB_WORKSPACE/app/release"/*.AppImage "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
+          mv "$GITHUB_WORKSPACE/app/release"/*.deb "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
           mv "$GITHUB_WORKSPACE/app/release"/latest-linux.yml "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
+          mv "$GITHUB_WORKSPACE/app/release"/fh-linux.yml "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
           [ -n "$(ls -A "$GITHUB_WORKSPACE/dist")" ] || { echo "::error::no artifacts packed"; exit 1; }
-          if [ "${{ matrix.flavor }}" = "full" ]; then
-            TAG="v$APP_VERSION"
-          else
-            TAG="natively-pr${{ inputs.pr || '661' }}-pronly-${{ steps.tag.outputs.tag }}"
-          fi
+          TAG="v$APP_VERSION"
           (cd "$GITHUB_WORKSPACE/dist" && sha256sum * > SHA256SUMS || shasum -a 256 * > SHA256SUMS)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             if [ "${{ inputs.force }}" != "true" ]; then
@@ -204,8 +172,8 @@ jobs:
             (cd "$GITHUB_WORKSPACE/dist" && gh release upload "$TAG" * --repo "$GITHUB_REPOSITORY" --clobber)
           else
             gh release create "$TAG" "$GITHUB_WORKSPACE"/dist/* --repo "$GITHUB_REPOSITORY" \
-              --title "Natively PR #${{ inputs.pr || '661' }} (${{ matrix.flavor }}) @ ${{ steps.tag.outputs.tag }}" \
-              --notes "Try-build for upstream PR #${{ inputs.pr || '661' }} (${{ matrix.flavor }} flavor). Not for general use."
+              --title "Natively Linux $TAG (ImBIOS ForkHub)" \
+              --notes "ImBIOS ForkHub Linux build: update-channel (with-fh) + linux-support at upstream ${{ steps.tag.outputs.tag }}. Auto-updates from the ImBIOS catalog."
           fi
           mkdir -p /tmp/prlink
           printf '%s' "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" > "/tmp/prlink/${{ matrix.flavor }}-url.txt"
@@ -216,60 +184,3 @@ jobs:
           name: pr-build-link-${{ matrix.flavor }}
           path: /tmp/prlink/
           if-no-files-found: error
-
-  comment:
-    name: update upstream PR comment
-    needs: [build]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: pr-build-link-*
-          path: /tmp/prlinks
-          merge-multiple: true
-
-      - name: Create or update the rolling PR comment
-        env:
-          COMMENT_TOKEN: ${{ secrets.UPSTREAM_COMMENT_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "$COMMENT_TOKEN" ]; then
-            echo "::warning::UPSTREAM_COMMENT_TOKEN not set — skipping upstream PR comment (add a PAT with public_repo scope in Settings → Secrets → Actions)."
-            exit 0
-          fi
-          UPSTREAM="Natively-AI-assistant/natively-cluely-ai-assistant"
-          PR="${{ inputs.pr || '661' }}"
-          MARKER="<!-- imbios-forkhub-pr-build:$PR -->"
-          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          SHA="${{ github.sha }}"
-          {
-            echo "$MARKER"
-            echo '## ForkHub try-builds'
-            echo
-            echo "Upstream PR #$PR — built from ImBIOS/forkhub-personal intent natively-pkg-no-maps-8dedeb5a @ $SHA ($DATE)."
-            echo
-            if [ -f /tmp/prlinks/pr-only-url.txt ]; then
-              echo "- PR-only (stock + this change, exactly what upstream would merge): [$(cat /tmp/prlinks/pr-only-tag.txt)]($(cat /tmp/prlinks/pr-only-url.txt))"
-            else
-              echo "- PR-only: build did not publish (see the run)."
-            fi
-            if [ -f /tmp/prlinks/full-url.txt ]; then
-              echo "- Full ForkHub (channel + linux-support + this change): [$(cat /tmp/prlinks/full-tag.txt)]($(cat /tmp/prlinks/full-url.txt))"
-            else
-              echo "- Full ForkHub: build did not publish (see the run)."
-            fi
-            echo "- Upstream-line builds: [with-fh/.forkhub releases](https://github.com/with-fh/.forkhub/releases)"
-            echo
-            echo '_Updated by ImBIOS/forkhub-personal pr-build workflow — one comment, edited in place._'
-          } > /tmp/pr-comment.md
-          EXISTING=$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/$UPSTREAM/issues/$PR/comments?per_page=100" \
-            --jq "[.[] | select(.body | contains(\"$MARKER\"))][0].id // empty")
-          BODY_JSON=$(jq -Rs '{body: .}' /tmp/pr-comment.md)
-          if [ -n "$EXISTING" ]; then
-            printf '%s' "$BODY_JSON" | GH_TOKEN="$COMMENT_TOKEN" gh api "repos/$UPSTREAM/issues/comments/$EXISTING" \
-              -X PATCH --input - --jq '.html_url'
-          else
-            GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$PR" --repo "$UPSTREAM" --body-file /tmp/pr-comment.md
-          fi

@@ -8,23 +8,6 @@
   "token_budget_per_run": 100000,
   "on_budget_exceed": "pause",
   "patches": {
-    "natively-pkg-no-maps-8dedeb5a": {
-      "status": "draft",
-      "version": "1.0.0",
-      "author": "Imamuzzaki Abu Salam",
-      "last_modified_by": "Imamuzzaki Abu Salam",
-      "branch": "natively/pkg-no-maps",
-      "last_realized_against_commit": "b439c1f0",
-      "depends_on": [
-        {
-          "repo": "with-fh/.forkhub",
-          "patch": "natively-forkhub-support-f276ae13",
-          "ref": "fbaad63659f8d8c6441a386a865093828b3a1b29",
-          "version": ">=2.0.0 <3.0.0"
-        }
-      ],
-      "upstream_pr": "https://github.com/Natively-AI-assistant/natively-cluely-ai-assistant/pull/661"
-    },
     "natively-linux-support-9d3f7a21": {
       "status": "applied",
       "version": "1.0.0",
@@ -43,11 +26,9 @@
     }
   },
   "apply_order": [
-    "natively-pkg-no-maps-8dedeb5a",
     "natively-linux-support-9d3f7a21"
   ],
   "slug_aliases": {
-    "natively-pkg-no-maps": "natively-pkg-no-maps-8dedeb5a",
     "natively-linux-support": "natively-linux-support-9d3f7a21"
   }
 }
